@@ -75,7 +75,7 @@ We provide multiple ways to install and run LoungeCat to suit your platform and 
 
 The AppImage is a universal package that runs on almost any Linux distribution.
 
-1. Download the `.AppImage` file from the [Releases](#) page.
+1. Download the `.AppImage` file from the [Releases](https://github.com/binkiewka/LoungeCat-Desktop/releases) page.
 2. Make it executable:
 
    ```bash
