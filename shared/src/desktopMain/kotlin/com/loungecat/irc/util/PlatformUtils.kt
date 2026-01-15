@@ -17,10 +17,10 @@ object PlatformUtils {
     
     fun getAppDataDirectory(): String {
         val os = System.getProperty("os.name").lowercase()
-        val home = System.getProperty("user.home")
+        val home = System.getProperty("user.home").replace("\\", "/")
         
         return when {
-            os.contains("win") -> "$home\\AppData\\Local\\LoungeCat"
+            os.contains("win") -> "$home/AppData/Local/LoungeCat"
             os.contains("mac") -> "$home/Library/Application Support/LoungeCat"
             else -> "$home/.loungecat"
         }
