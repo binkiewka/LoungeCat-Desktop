@@ -425,7 +425,7 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
         AddServerDialog(
                 onDismiss = { showAddServerDialog = false },
                 onConnect = { config ->
-                    connectionManager.connect(config)
+                    connectionManager.connect(config, isNew = true)
                     showAddServerDialog = false
                 }
         )
