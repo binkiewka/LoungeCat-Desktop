@@ -1,0 +1,158 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2 rpm
+          
+      - name: Build Distributables (Linux)
+        run: ./gradlew :desktopApp:createReleaseDistributable :desktopApp:packageReleaseDeb :desktopApp:packageReleaseRpm --stacktrace
+        
+      - name: Package AppImage Manually
+        run: |
+          # Download AppImageTool
+          wget "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
+          chmod +x appimagetool
+          
+          # Define paths
+          # createReleaseDistributable outputs to .../app
+          # We need to act on the folder inside it, usually "LoungeCat" or just use the app folder as root if structured right
+          # Let's inspect what we have first
+          echo "Listing dist directory:"
+          ls -R desktopApp/build/compose/binaries/main-release/app || echo "Dist dir not found"
+
+          APP_SOURCE="desktopApp/build/compose/binaries/main-release/app/LoungeCat"
+          
+          # If the folder doesn't exist, we might need to adjust (some optimized builds output directly to 'app')
+          if [ ! -d "$APP_SOURCE" ]; then
+            echo "Expected $APP_SOURCE not found, falling back to 'app' root"
+            APP_SOURCE="desktopApp/build/compose/binaries/main-release/app"
+          fi
+          
+          echo "Using source: $APP_SOURCE"
+          
+          # Prepare AppDir
+          APP_DIR="AppDir"
+          mkdir -p "$APP_DIR"
+          cp -r "$APP_SOURCE"/* "$APP_DIR/"
+          
+          # Link AppRun
+          rm -f "$APP_DIR/AppRun"
+          if [ -d "$APP_DIR/bin" ]; then
+             ln -s "bin/LoungeCat" "$APP_DIR/AppRun"
+          else
+             echo "ERROR: bin directory not found in AppDir"
+             ls -R "$APP_DIR"
+             exit 1
+          fi
+          
+          # Copy Icon
+          cp shared/src/commonMain/composeResources/drawable/logo.png "$APP_DIR/LoungeCat.png"
+          ln -s LoungeCat.png "$APP_DIR/.DirIcon"
+          
+          # Create .desktop file
+          cat > "$APP_DIR/LoungeCat.desktop" << EOF
+          [Desktop Entry]
+          Name=LoungeCat
+          Exec=LoungeCat
+          Icon=LoungeCat
+          Type=Application
+          Categories=Network;
+          Comment=Modern IRC Client for Linux
+          Terminal=false
+          StartupWMClass=LoungeCat
+          EOF
+          
+          # Run AppImageTool
+          ./appimagetool "$APP_DIR"
+          
+          # Move output to a predictable name
+          mv *.AppImage LoungeCat-Linux.AppImage
+        
+      - name: Upload Release Assets (Linux)
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            desktopApp/build/compose/binaries/**/*.deb
+            desktopApp/build/compose/binaries/**/*.rpm
+            LoungeCat-Linux.AppImage
+          
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        
+      - name: Install WiX Toolset
+        run: |
+          choco install wixtoolset --no-progress
+          echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" >> $env:GITHUB_PATH
+          echo "WIX=C:\Program Files (x86)\WiX Toolset v3.11" >> $env:GITHUB_ENV
+
+      - name: Install ImageMagick
+        run: choco install imagemagick --no-progress
+
+      - name: Create ICO file
+        run: |
+          magick shared/src/commonMain/composeResources/drawable/logo.png -define icon:auto-resize=256,128,64,48,32,16 desktopApp/icon.ico
+
+      - name: Check Files and Tools Before Build
+        run: |
+          dir desktopApp
+          if (Test-Path desktopApp/icon.ico) { Write-Host "Verified: icon.ico exists" } else { Write-Error "Error: icon.ico NOT found" }
+          
+          Write-Host "Checking WiX Tools..."
+          candle.exe -?
+          light.exe -?
+          Write-Host "WiX Environment Variable: $env:WIX"
+
+      - name: Check Available Tasks
+        run: .\gradlew.bat tasks --all
+
+      - name: Build Windows Distribution
+        run: .\gradlew.bat :desktopApp:packageReleaseMsi --info --stacktrace
+        env:
+           WIX: "C:\\Program Files (x86)\\WiX Toolset v3.11"
+        
+      - name: List Entire Build Directory
+        if: always()
+        run: dir -Recurse desktopApp/build
+        
+      - name: Upload Release Assets (MSI)
+        uses: softprops/action-gh-release@v1
+        with:
+          files: desktopApp/build/compose/binaries/**/*.msi
+

@@ -1,0 +1,2240 @@
+package com.loungecat.irc.ui.screen
+
+// import loungecat_desktop.shared.generated.resources.Res
+// import loungecat_desktop.shared.generated.resources.logo_transparent
+// import com.loungecat.irc.ui.components.SplitPane
+
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import com.loungecat.irc.data.model.*
+import com.loungecat.irc.service.DesktopConnectionManager
+import com.loungecat.irc.ui.components.ChannelPane
+import com.loungecat.irc.ui.components.ChatGrid
+import com.loungecat.irc.ui.components.CustomVerticalScrollbar
+import com.loungecat.irc.ui.components.ExportDialog
+import com.loungecat.irc.ui.components.QuickModerationDialog
+import com.loungecat.irc.ui.components.UserContextMenu
+import com.loungecat.irc.ui.components.rememberSplitViewState
+import com.loungecat.irc.ui.theme.AppColors
+import com.loungecat.irc.util.TabCompletionHelper
+import java.util.*
+import kotlinx.coroutines.launch
+
+// private enum class ActivePane {
+//    LEFT,
+//    RIGHT
+// }
+
+@Composable
+fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
+    val colors = AppColors.current
+    val scope = rememberCoroutineScope()
+
+    val servers by connectionManager.servers.collectAsState()
+    val currentServerId by connectionManager.currentServerId.collectAsState()
+    val connectionState by connectionManager.connectionState.collectAsState()
+    val channels by connectionManager.channels.collectAsState()
+    val currentChannel by connectionManager.currentChannel.collectAsState()
+    val messages by connectionManager.messages.collectAsState()
+    val urlPreviews by connectionManager.urlPreviews.collectAsState()
+    val imageUrls by connectionManager.imageUrls.collectAsState()
+    val showJoinPartMessages by connectionManager.showJoinPartMessages.collectAsState()
+    val userPreferences by connectionManager.userPreferences.collectAsState()
+
+    var showAddServerDialog by remember { mutableStateOf(false) }
+    var showJoinChannelDialog by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    var showEditServerDialog by remember { mutableStateOf(false) }
+    var editingServerConfig by remember { mutableStateOf<ServerConfig?>(null) }
+    var serverContextMenuState by remember { mutableStateOf<Pair<Long, Boolean>?>(null) }
+    var channelContextMenuState by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    var showIgnoredUsersDialog by remember { mutableStateOf(false) }
+    var messageInput by remember { mutableStateOf("") }
+    val tabCompletionHelper = remember { TabCompletionHelper() }
+    var selectedUserForContextMenu by remember { mutableStateOf<ChannelUser?>(null) }
+    var showModerationDialog by remember { mutableStateOf(false) }
+    var moderationTargetUser by remember { mutableStateOf<String?>(null) }
+    var isUserListVisible by remember { mutableStateOf(true) }
+    var showExportDialog by remember { mutableStateOf(false) }
+    var exportChannelName by remember { mutableStateOf<String?>(null) }
+    val expandedServerIds = remember { mutableStateListOf<Long>() }
+
+    val splitViewState = rememberSplitViewState()
+    // var activeSplitPane by remember { mutableStateOf(ActivePane.LEFT) }
+
+    LaunchedEffect(userPreferences.spellCheckLanguage) {
+        com.loungecat.irc.util.SpellChecker.initialize(userPreferences.spellCheckLanguage)
+    }
+
+    // Removed currentMessages as it is now handled in ChatPanel
+    val currentUsers = currentChannel?.let { connectionManager.getChannelUsers(it) } ?: emptyList()
+
+    // LazyListState for the servers/channels sidebar
+    val sidebarListState = rememberLazyListState()
+
+    var isSidebarVisible by remember { mutableStateOf(true) }
+    val sidebarWidth by animateDpAsState(targetValue = if (isSidebarVisible) 250.dp else 50.dp)
+
+    Row(modifier = Modifier.fillMaxSize().background(colors.background)) {
+        Column(
+                modifier =
+                        Modifier.width(sidebarWidth)
+                                .fillMaxHeight()
+                                .background(colors.windowBackground)
+        ) {
+            if (isSidebarVisible) {
+                // EXPANDED SIDEBAR CONTENT
+                Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                            text = "Servers",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = colors.foreground,
+                            fontWeight = FontWeight.Bold
+                    )
+                    Row {
+                        IconButton(
+                                onClick = {
+                                    connectionManager.setSplitViewEnabled(
+                                            !userPreferences.splitViewEnabled
+                                    )
+                                },
+                                modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                    imageVector =
+                                            if (userPreferences.splitViewEnabled)
+                                                    Icons.Default.VerticalSplit
+                                            else Icons.Default.CropPortrait,
+                                    contentDescription = "Toggle Split View",
+                                    tint =
+                                            if (userPreferences.splitViewEnabled) colors.cyan
+                                            else colors.comment,
+                                    modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        IconButton(
+                                onClick = { showSettingsDialog = true },
+                                modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = "Settings",
+                                    tint = colors.comment,
+                                    modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        IconButton(
+                                onClick = { isSidebarVisible = false },
+                                modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                    contentDescription = "Collapse Sidebar",
+                                    tint = colors.comment,
+                                    modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        // Moved "Add Server" to end or maybe just keep it separate?
+                        // Let's keep it here but compact.
+                        IconButton(
+                                onClick = { showAddServerDialog = true },
+                                modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Add Server",
+                                    tint = colors.green,
+                                    modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = colors.border, thickness = 1.dp)
+
+                Box(modifier = Modifier.weight(1f)) {
+                    LazyColumn(state = sidebarListState, modifier = Modifier.fillMaxSize()) {
+                        if (servers.isEmpty()) {
+                            item {
+                                Text(
+                                        text = "No servers configured.\nClick + to add a server.",
+                                        color = colors.comment,
+                                        modifier = Modifier.padding(16.dp),
+                                        style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                        }
+
+                        items(servers) { server ->
+                            ServerItem(
+                                    server = server,
+                                    isSelected = server.serverId == currentServerId,
+                                    currentChannel = currentChannel,
+                                    showContextMenu =
+                                            serverContextMenuState?.first == server.serverId &&
+                                                    serverContextMenuState?.second == true,
+                                    channelContextMenuState = channelContextMenuState,
+                                    isExpanded = expandedServerIds.contains(server.serverId),
+                                    onServerClick = {
+                                        if (expandedServerIds.contains(server.serverId)) {
+                                            expandedServerIds.remove(server.serverId)
+                                        } else {
+                                            expandedServerIds.add(server.serverId)
+                                        }
+                                    },
+                                    onServerRightClick = {
+                                        serverContextMenuState = Pair(server.serverId, true)
+                                    },
+                                    onDismissContextMenu = { serverContextMenuState = null },
+                                    onChannelClick = { channelName ->
+                                        connectionManager.switchToServer(server.serverId)
+                                        connectionManager.setCurrentChannel(channelName)
+
+                                        if (userPreferences.splitViewEnabled) {
+                                            if (!splitViewState.isEnabled) {
+                                                // Transition from Single -> Grid (Current + New)
+                                                val currentSrv = currentServerId
+                                                val currentCh = currentChannel
+                                                if (currentSrv != null && currentCh != null) {
+                                                    splitViewState.enable(
+                                                            Pair(currentSrv, currentCh)
+                                                    )
+                                                    splitViewState.addChannel(
+                                                            server.serverId,
+                                                            channelName
+                                                    )
+                                                } else {
+                                                    splitViewState.enable(
+                                                            Pair(server.serverId, channelName)
+                                                    )
+                                                }
+                                            } else {
+                                                // Already in Grid Mode -> Add or Replace Active
+                                                splitViewState.addChannel(
+                                                        server.serverId,
+                                                        channelName
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onChannelClose = { channelName ->
+                                        connectionManager.partChannel(channelName)
+                                    },
+                                    onChannelRightClick = { channelName ->
+                                        channelContextMenuState = Pair(channelName, true)
+                                    },
+                                    onDismissChannelContextMenu = {
+                                        channelContextMenuState = null
+                                    },
+                                    onListIgnoredUsers = { showIgnoredUsersDialog = true },
+                                    onClearChannelHistory = { channelName ->
+                                        connectionManager.clearChannelHistory(
+                                                server.serverId,
+                                                channelName
+                                        )
+                                    },
+                                    onLeaveChannel = { channelName ->
+                                        connectionManager.partChannel(server.serverId, channelName)
+                                    },
+                                    onJoinNewChannel = {
+                                        connectionManager.switchToServer(server.serverId)
+                                        showJoinChannelDialog = true
+                                    },
+                                    onConnect = {
+                                        connectionManager.connectServer(server.serverId)
+                                    },
+                                    onDisconnect = {
+                                        connectionManager.disconnectServer(server.serverId)
+                                    },
+                                    onEdit = {
+                                        val connection =
+                                                connectionManager.getConnection(server.serverId)
+                                        editingServerConfig = connection?.config
+                                        showEditServerDialog = true
+                                        serverContextMenuState = null
+                                    },
+                                    onRemove = {
+                                        connectionManager.removeServer(server.serverId)
+                                        serverContextMenuState = null
+                                    },
+                                    onExportChannel = { channelName ->
+                                        exportChannelName = channelName
+                                        showExportDialog = true
+                                    },
+                                    onOpenSplitView = { channelName ->
+                                        // Auto-enable split view if disabled
+                                        if (!userPreferences.splitViewEnabled) {
+                                            connectionManager.setSplitViewEnabled(true)
+                                        }
+
+                                        if (splitViewState.isEnabled) {
+                                            splitViewState.addChannel(server.serverId, channelName)
+                                        } else {
+                                            // Enable split view logic
+                                            val currentSrv = currentServerId
+                                            val currentCh = currentChannel
+                                            if (currentSrv != null && currentCh != null) {
+                                                // If we are opening a NEW channel in split view,
+                                                // maybe
+                                                // keep
+                                                // current as #1 and new as #2?
+                                                splitViewState.enable(Pair(currentSrv, currentCh))
+                                                splitViewState.addChannel(
+                                                        server.serverId,
+                                                        channelName
+                                                )
+                                            } else {
+                                                splitViewState.enable(
+                                                        Pair(server.serverId, channelName)
+                                                )
+                                            }
+                                        }
+                                        // Switch to ensure selection update if needed
+                                        connectionManager.switchToServer(server.serverId)
+                                        connectionManager.setCurrentChannel(channelName)
+                                    }
+                            )
+                        }
+                    }
+                    CustomVerticalScrollbar(
+                            listState = sidebarListState,
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                    )
+                }
+            } else {
+                // COLLAPSED SIDEBAR CONTENT (Rail)
+                Column(
+                        modifier = Modifier.fillMaxSize().padding(vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Top
+                ) {
+                    IconButton(
+                            onClick = { isSidebarVisible = true },
+                            modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = "Expand Sidebar",
+                                tint = colors.cyan,
+                                modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Optional: Show server icons/initials here?
+                    // For now, minimal implementation as requested "expand/hide"
+                }
+            }
+        }
+
+        // VerticalDivider(modifier = Modifier.fillMaxHeight().width(1.dp), color = colors.border)
+
+        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            if (userPreferences.splitViewEnabled && splitViewState.isEnabled) {
+                // SPLIT VIEW MODE
+                ChatGrid(
+                        splitViewState = splitViewState,
+                        connectionManager = connectionManager,
+                        userPreferences = userPreferences,
+                        onSendMessage = { serverId, channelName, message ->
+                            connectionManager.sendMessage(serverId, channelName, message)
+                        },
+                        onJoinChannel = { serverId ->
+                            connectionManager.switchToServer(serverId)
+                            showJoinChannelDialog = true
+                        }
+                )
+            } else {
+                // SINGLE VIEW MODE
+                val currentSrv = currentServerId
+                val currentCh = currentChannel
+
+                if (currentSrv != null && currentCh != null) {
+                    ChannelPane(
+                            serverId = currentSrv,
+                            channelName = currentCh,
+                            connectionManager = connectionManager,
+                            userPreferences = userPreferences,
+                            onSendMessage = { msg ->
+                                connectionManager.sendMessage(currentSrv, currentCh, msg)
+                            },
+                            onJoinChannel = { showJoinChannelDialog = true }
+                    )
+                } else {
+                    // Welcome / No Channel Selected State
+                    Box(
+                            modifier =
+                                    Modifier.fillMaxSize().background(colors.background).zIndex(1f),
+                            contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                    text = "Welcome to LoungeCat",
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    color = colors.foreground
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                    text =
+                                            when {
+                                                servers.isEmpty() -> "Add a server to get started"
+                                                else -> "Select a channel to start chatting"
+                                            },
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = colors.comment
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddServerDialog) {
+        AddServerDialog(
+                onDismiss = { showAddServerDialog = false },
+                onConnect = { config ->
+                    connectionManager.connect(config)
+                    showAddServerDialog = false
+                }
+        )
+    }
+
+    if (showJoinChannelDialog) {
+        JoinChannelDialog(
+                onDismiss = { showJoinChannelDialog = false },
+                onJoin = { channelName ->
+                    connectionManager.joinChannel(channelName)
+                    showJoinChannelDialog = false
+                }
+        )
+    }
+
+    selectedUserForContextMenu?.let { user ->
+        val isIgnored = userPreferences.ignoredUsers.contains(user.nickname.lowercase())
+        UserContextMenu(
+                user = user,
+                onDismiss = { selectedUserForContextMenu = null },
+                onStartPM = { nickname ->
+                    connectionManager.startPrivateMessage(nickname)
+                    selectedUserForContextMenu = null
+                },
+                onWhois = { nickname ->
+                    connectionManager.sendMessage("/whois $nickname")
+                    selectedUserForContextMenu = null
+                },
+                onModerate = { nickname ->
+                    moderationTargetUser = nickname
+                    showModerationDialog = true
+                    selectedUserForContextMenu = null
+                },
+                onToggleIgnore = { nickname ->
+                    if (isIgnored) {
+                        connectionManager.removeIgnoredUser(nickname)
+                    } else {
+                        connectionManager.ignoreUser(nickname)
+                    }
+                    selectedUserForContextMenu = null
+                },
+                isIgnored = isIgnored
+        )
+    }
+
+    if (showModerationDialog && moderationTargetUser != null && currentChannel != null) {
+        QuickModerationDialog(
+                targetNickname = moderationTargetUser!!,
+                channelName = currentChannel!!,
+                onDismiss = {
+                    showModerationDialog = false
+                    moderationTargetUser = null
+                },
+                onAction = { action ->
+                    connectionManager.sendMessage(action)
+                    showModerationDialog = false
+                    moderationTargetUser = null
+                }
+        )
+    }
+
+    if (showSettingsDialog) {
+        SettingsDialog(
+                userPreferences = userPreferences,
+                onFontSizeChange = { connectionManager.setFontSize(it) },
+                onTimestampFormatChange = { connectionManager.setTimestampFormat(it) },
+                onUrlImageDisplayModeChange = { connectionManager.setUrlImageDisplayMode(it) },
+                onColoredNicknamesChange = { connectionManager.setColoredNicknames(it) },
+                onShowJoinPartMessagesChange = { connectionManager.setShowJoinPartMessages(it) },
+                onSplitViewEnabledChange = { connectionManager.setSplitViewEnabled(it) },
+                onSpellCheckEnabledChange = { connectionManager.setSpellCheckEnabled(it) },
+                onSpellCheckLanguageChange = { connectionManager.setSpellCheckLanguage(it) },
+                onThemeChange = { connectionManager.setTheme(it) },
+                onOpenThemesFolder = { com.loungecat.irc.ui.theme.ThemeManager.openThemesFolder() },
+                onSoundAlertsEnabledChange = { connectionManager.setSoundAlertsEnabled(it) },
+                onSoundVolumeChange = { connectionManager.setSoundVolume(it) },
+                onSoundOnMentionChange = { connectionManager.setSoundOnMention(it) },
+                onSoundOnPrivateMessageChange = { connectionManager.setSoundOnPrivateMessage(it) },
+                onSoundOnHighlightChange = { /* TODO: Implement highlighting sound toggle if needed */
+                },
+                onDismiss = { showSettingsDialog = false }
+        )
+    }
+
+    if (showEditServerDialog && editingServerConfig != null) {
+        EditServerDialog(
+                config = editingServerConfig!!,
+                onDismiss = {
+                    showEditServerDialog = false
+                    editingServerConfig = null
+                },
+                onSave = { updatedConfig ->
+                    connectionManager.removeServer(editingServerConfig!!.id)
+                    connectionManager.connect(updatedConfig)
+                    showEditServerDialog = false
+                    editingServerConfig = null
+                }
+        )
+    }
+
+    if (showIgnoredUsersDialog) {
+        IgnoredUsersDialog(
+                ignoredUsers = userPreferences.ignoredUsers,
+                onDismiss = { showIgnoredUsersDialog = false },
+                onUnignore = { user -> connectionManager.removeIgnoredUser(user) }
+        )
+    }
+
+    if (showExportDialog && exportChannelName != null) {
+        val exportMessages = messages[exportChannelName] ?: emptyList()
+        ExportDialog(
+                channelName = exportChannelName!!,
+                messages = exportMessages,
+                onDismiss = {
+                    showExportDialog = false
+                    exportChannelName = null
+                }
+        )
+    }
+}
+
+@Composable
+private fun ChannelListItem(
+        channel: Channel,
+        isSelected: Boolean,
+        onClick: () -> Unit,
+        onClose: (() -> Unit)? = null,
+        onRightClick: () -> Unit = {},
+        showContextMenu: Boolean = false,
+        onDismissContextMenu: () -> Unit = {},
+        onListIgnoredUsers: () -> Unit = {},
+        onClearHistory: () -> Unit = {},
+        onLeaveChannel: () -> Unit = {},
+        onExport: () -> Unit = {},
+        onOpenSplitView: () -> Unit = {}
+) {
+    val colors = AppColors.current
+
+    Box {
+        Row(
+                modifier =
+                        Modifier.fillMaxWidth()
+                                .clickable(onClick = onClick)
+                                .pointerInput(Unit) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            if (event.buttons.isSecondaryPressed) {
+                                                onRightClick()
+                                            }
+                                        }
+                                    }
+                                }
+                                .background(
+                                        if (isSelected) colors.highlightBg else Color.Transparent
+                                )
+                                .padding(start = 36.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                    imageVector =
+                            when (channel.type) {
+                                ChannelType.CHANNEL -> Icons.Default.Tag
+                                ChannelType.QUERY -> Icons.Default.Person
+                                ChannelType.SERVER -> Icons.Default.Dns
+                            },
+                    contentDescription = null,
+                    tint =
+                            when {
+                                isSelected -> colors.cyan
+                                channel.type == ChannelType.QUERY -> colors.cyan
+                                else -> colors.comment
+                            },
+                    modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                    text = channel.name,
+                    color = if (isSelected) colors.cyan else colors.foreground,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f)
+            )
+            // Activity indicator (green dot for recent activity)
+            if (channel.hasRecentActivity && !isSelected) {
+                Box(
+                        modifier =
+                                Modifier.size(6.dp)
+                                        .background(
+                                                colors.green.copy(alpha = 0.7f),
+                                                RoundedCornerShape(50)
+                                        )
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            if (channel.unreadCount > 0) {
+                Surface(shape = RoundedCornerShape(10.dp), color = colors.pink) {
+                    Text(
+                            text =
+                                    if (channel.unreadCount > 99) "99+"
+                                    else channel.unreadCount.toString(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.windowBackground,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            if (onClose != null && channel.type != ChannelType.SERVER) {
+                IconButton(onClick = onClose, modifier = Modifier.size(18.dp)) {
+                    Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Leave Channel",
+                            tint = colors.comment,
+                            modifier = Modifier.size(12.dp)
+                    )
+                }
+            }
+        }
+
+        DropdownMenu(
+                expanded = showContextMenu,
+                onDismissRequest = onDismissContextMenu,
+                offset = DpOffset(80.dp, 0.dp),
+                containerColor = colors.windowBackground
+        ) {
+            DropdownMenuItem(
+                    text = { Text("List Ignored Users", color = colors.foreground) },
+                    leadingIcon = { Icon(Icons.Default.PersonOff, null, tint = colors.orange) },
+                    onClick = {
+                        onListIgnoredUsers()
+                        onDismissContextMenu()
+                    }
+            )
+            DropdownMenuItem(
+                    text = { Text("Open in Split View", color = colors.foreground) },
+                    leadingIcon = { Icon(Icons.Default.VerticalSplit, null, tint = colors.cyan) },
+                    onClick = {
+                        onOpenSplitView()
+                        onDismissContextMenu()
+                    }
+            )
+            DropdownMenuItem(
+                    text = { Text("Export Chat Log", color = colors.foreground) },
+                    leadingIcon = { Icon(Icons.Default.FileDownload, null, tint = colors.cyan) },
+                    onClick = {
+                        onExport()
+                        onDismissContextMenu()
+                    }
+            )
+            DropdownMenuItem(
+                    text = { Text("Clear Channel", color = colors.foreground) },
+                    leadingIcon = { Icon(Icons.Default.DeleteSweep, null, tint = colors.yellow) },
+                    onClick = {
+                        onClearHistory()
+                        onDismissContextMenu()
+                    }
+            )
+            if (channel.type != ChannelType.SERVER) {
+                DropdownMenuItem(
+                        text = { Text("Leave Channel", color = colors.red) },
+                        leadingIcon = {
+                            Icon(Icons.AutoMirrored.Filled.ExitToApp, null, tint = colors.red)
+                        },
+                        onClick = {
+                            onLeaveChannel()
+                            onDismissContextMenu()
+                        }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ServerItem(
+        server: com.loungecat.irc.service.ServerListItem,
+        isSelected: Boolean,
+        isExpanded: Boolean,
+        currentChannel: String?,
+        showContextMenu: Boolean,
+        channelContextMenuState: Pair<String, Boolean>?,
+        onServerClick: () -> Unit,
+        onServerRightClick: () -> Unit,
+        onDismissContextMenu: () -> Unit,
+        onChannelClick: (String) -> Unit,
+        onChannelClose: (String) -> Unit,
+        onChannelRightClick: (String) -> Unit,
+        onDismissChannelContextMenu: () -> Unit,
+        onListIgnoredUsers: () -> Unit,
+        onClearChannelHistory: (String) -> Unit,
+        onLeaveChannel: (String) -> Unit,
+        onJoinNewChannel: () -> Unit,
+        onConnect: () -> Unit,
+        onDisconnect: () -> Unit,
+        onEdit: () -> Unit,
+        onRemove: () -> Unit,
+        onExportChannel: (String) -> Unit = {},
+        onOpenSplitView: (String) -> Unit = {}
+) {
+    val colors = AppColors.current
+
+    Column {
+        Box {
+            Row(
+                    modifier =
+                            Modifier.fillMaxWidth()
+                                    .clickable(onClick = onServerClick)
+                                    .pointerInput(Unit) {
+                                        awaitPointerEventScope {
+                                            while (true) {
+                                                val event = awaitPointerEvent()
+                                                if (event.buttons.isSecondaryPressed) {
+                                                    onServerRightClick()
+                                                }
+                                            }
+                                        }
+                                    }
+                                    .background(
+                                            if (isSelected) colors.selection else Color.Transparent
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                            imageVector =
+                                    if (isExpanded) Icons.Default.KeyboardArrowDown
+                                    else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = if (isExpanded) "Collapse" else "Expand",
+                            tint = colors.comment,
+                            modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                            imageVector =
+                                    if (server.isConnected) Icons.Default.Cloud
+                                    else Icons.Default.CloudOff,
+                            contentDescription = null,
+                            tint = if (server.isConnected) colors.green else colors.comment,
+                            modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                            text = server.serverName.ifEmpty { server.hostname },
+                            color = colors.foreground,
+                            style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+
+                Row {
+                    if (server.isConnected) {
+                        IconButton(onClick = onDisconnect, modifier = Modifier.size(24.dp)) {
+                            Icon(
+                                    imageVector = Icons.Default.PowerSettingsNew,
+                                    contentDescription = "Disconnect",
+                                    tint = colors.red,
+                                    modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = onConnect, modifier = Modifier.size(24.dp)) {
+                            Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = "Connect",
+                                    tint = colors.green,
+                                    modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            DropdownMenu(
+                    expanded = showContextMenu,
+                    onDismissRequest = onDismissContextMenu,
+                    offset = DpOffset(100.dp, 0.dp),
+                    containerColor = colors.windowBackground
+            ) {
+                DropdownMenuItem(
+                        text = { Text("Join New Channel...", color = colors.foreground) },
+                        leadingIcon = { Icon(Icons.Default.Add, null, tint = colors.green) },
+                        onClick = {
+                            onDismissContextMenu()
+                            onJoinNewChannel()
+                        }
+                )
+                DropdownMenuItem(
+                        text = { Text("Edit Server", color = colors.foreground) },
+                        leadingIcon = { Icon(Icons.Default.Edit, null, tint = colors.cyan) },
+                        onClick = {
+                            onDismissContextMenu()
+                            onEdit()
+                        }
+                )
+                DropdownMenuItem(
+                        text = { Text("Remove Server", color = colors.red) },
+                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = colors.red) },
+                        onClick = {
+                            onDismissContextMenu()
+                            onRemove()
+                        }
+                )
+            }
+        }
+
+        if (isExpanded && server.isConnected) {
+            val serverChannels = server.channels.filter { it.type == ChannelType.SERVER }
+            val regularChannels = server.channels.filter { it.type == ChannelType.CHANNEL }
+            val privateMessages = server.channels.filter { it.type == ChannelType.QUERY }
+
+            serverChannels.forEach { channel ->
+                ChannelListItem(
+                        channel = channel,
+                        isSelected = channel.name == currentChannel,
+                        onClick = { onChannelClick(channel.name) },
+                        onClose = null,
+                        onRightClick = { onChannelRightClick(channel.name) },
+                        showContextMenu =
+                                channelContextMenuState?.first == channel.name &&
+                                        channelContextMenuState?.second == true,
+                        onDismissContextMenu = onDismissChannelContextMenu,
+                        onListIgnoredUsers = onListIgnoredUsers,
+                        onClearHistory = { onClearChannelHistory(channel.name) },
+                        onLeaveChannel = { onLeaveChannel(channel.name) },
+                        onExport = { onExportChannel(channel.name) },
+                        onOpenSplitView = { onOpenSplitView(channel.name) }
+                )
+            }
+
+            if (regularChannels.isNotEmpty()) {
+                Text(
+                        text = "CHANNELS",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.comment,
+                        modifier = Modifier.padding(start = 36.dp, top = 8.dp, bottom = 4.dp)
+                )
+                regularChannels.forEach { channel ->
+                    ChannelListItem(
+                            channel = channel,
+                            isSelected = channel.name == currentChannel,
+                            onClick = { onChannelClick(channel.name) },
+                            onClose = { onChannelClose(channel.name) },
+                            onRightClick = { onChannelRightClick(channel.name) },
+                            showContextMenu =
+                                    channelContextMenuState?.first == channel.name &&
+                                            channelContextMenuState?.second == true,
+                            onDismissContextMenu = onDismissChannelContextMenu,
+                            onListIgnoredUsers = onListIgnoredUsers,
+                            onClearHistory = { onClearChannelHistory(channel.name) },
+                            onLeaveChannel = { onLeaveChannel(channel.name) },
+                            onExport = { onExportChannel(channel.name) },
+                            onOpenSplitView = { onOpenSplitView(channel.name) }
+                    )
+                }
+            }
+
+            if (privateMessages.isNotEmpty()) {
+                Text(
+                        text = "PRIVATE MESSAGES",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.cyan,
+                        modifier = Modifier.padding(start = 36.dp, top = 8.dp, bottom = 4.dp)
+                )
+                privateMessages.forEach { channel ->
+                    ChannelListItem(
+                            channel = channel,
+                            isSelected = channel.name == currentChannel,
+                            onClick = { onChannelClick(channel.name) },
+                            onClose = { onChannelClose(channel.name) },
+                            onRightClick = { onChannelRightClick(channel.name) },
+                            showContextMenu =
+                                    channelContextMenuState?.first == channel.name &&
+                                            channelContextMenuState?.second == true,
+                            onDismissContextMenu = onDismissChannelContextMenu,
+                            onListIgnoredUsers = onListIgnoredUsers,
+                            onClearHistory = { onClearChannelHistory(channel.name) },
+                            onLeaveChannel = { onLeaveChannel(channel.name) },
+                            onExport = { onExportChannel(channel.name) },
+                            onOpenSplitView = { onOpenSplitView(channel.name) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UserItem(user: ChannelUser, onClick: () -> Unit) {
+    val colors = AppColors.current
+
+    Row(
+            modifier =
+                    Modifier.fillMaxWidth()
+                            .clickable(onClick = onClick)
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+    ) {
+        val prefix =
+                when {
+                    user.modes.contains(UserMode.OWNER) -> "~"
+                    user.modes.contains(UserMode.ADMIN) -> "&"
+                    user.modes.contains(UserMode.OP) -> "@"
+                    user.modes.contains(UserMode.HALFOP) -> "%"
+                    user.modes.contains(UserMode.VOICE) -> "+"
+                    else -> " "
+                }
+
+        val prefixColor =
+                when {
+                    user.isOp -> colors.red
+                    user.isVoiced -> colors.green
+                    else -> colors.comment
+                }
+
+        Text(
+                text = prefix,
+                color = prefixColor,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.width(12.dp)
+        )
+        Text(
+                text = user.nickname,
+                color = colors.foreground,
+                style = MaterialTheme.typography.bodySmall
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddServerDialog(onDismiss: () -> Unit, onConnect: (ServerConfig) -> Unit) {
+    val colors = AppColors.current
+
+    var serverName by remember { mutableStateOf("") }
+    var hostname by remember { mutableStateOf("") }
+    var port by remember { mutableStateOf("6697") }
+    var useSsl by remember { mutableStateOf(true) }
+    var acceptSelfSignedCerts by remember { mutableStateOf(false) }
+    var serverPassword by remember { mutableStateOf("") }
+    var nickname by remember { mutableStateOf("") }
+    var altNickname by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var realName by remember { mutableStateOf("") }
+    var useSasl by remember { mutableStateOf(false) }
+    var saslUsername by remember { mutableStateOf("") }
+    var saslPassword by remember { mutableStateOf("") }
+    var nickServPassword by remember { mutableStateOf("") }
+    var autoJoinChannels by remember { mutableStateOf("") }
+    var onConnectCommands by remember { mutableStateOf("") }
+    var proxyType by remember { mutableStateOf(ProxyType.NONE) }
+    var proxyHost by remember { mutableStateOf("") }
+    var proxyPort by remember { mutableStateOf("1080") }
+    var proxyUsername by remember { mutableStateOf("") }
+    var proxyPassword by remember { mutableStateOf("") }
+
+    AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = colors.windowBackground,
+            title = { Text("Add Server", color = colors.foreground) },
+            text = {
+                val scope = rememberCoroutineScope()
+                val scrollState = rememberScrollState()
+                Row(modifier = Modifier.width(420.dp).heightIn(max = 500.dp)) {
+                    Column(
+                            modifier = Modifier.weight(1f).verticalScroll(scrollState),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        OutlinedTextField(
+                                value = serverName,
+                                onValueChange = { serverName = it },
+                                label = { Text("Server Name") },
+                                placeholder = { Text("e.g., Libera Chat") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                        )
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                    value = hostname,
+                                    onValueChange = { hostname = it },
+                                    label = { Text("Hostname") },
+                                    placeholder = { Text("irc.libera.chat") },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true
+                            )
+                            OutlinedTextField(
+                                    value = port,
+                                    onValueChange = { port = it.filter { c -> c.isDigit() } },
+                                    label = { Text("Port") },
+                                    modifier = Modifier.width(100.dp),
+                                    singleLine = true
+                            )
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = useSsl, onCheckedChange = { useSsl = it })
+                            Text("Use SSL/TLS", color = colors.foreground)
+                        }
+
+                        if (useSsl) {
+                            Row(
+                                    modifier = Modifier.fillMaxWidth().padding(start = 32.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                            "Accept Self-Signed Certificates",
+                                            color = colors.foreground
+                                    )
+                                    Text(
+                                            "Less secure - only for trusted servers",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colors.orange.copy(alpha = 0.7f)
+                                    )
+                                }
+                                Checkbox(
+                                        checked = acceptSelfSignedCerts,
+                                        onCheckedChange = { acceptSelfSignedCerts = it }
+                                )
+                            }
+                        }
+
+                        OutlinedTextField(
+                                value = serverPassword,
+                                onValueChange = { serverPassword = it },
+                                label = { Text("Server Password (optional)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                visualTransformation = PasswordVisualTransformation()
+                        )
+
+                        HorizontalDivider(color = colors.border)
+
+                        OutlinedTextField(
+                                value = nickname,
+                                onValueChange = { nickname = it },
+                                label = { Text("Nickname") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                        )
+
+                        OutlinedTextField(
+                                value = altNickname,
+                                onValueChange = { altNickname = it },
+                                label = { Text("Alternative Nickname") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                        )
+
+                        OutlinedTextField(
+                                value = username,
+                                onValueChange = { username = it },
+                                label = { Text("Username") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                        )
+
+                        OutlinedTextField(
+                                value = realName,
+                                onValueChange = { realName = it },
+                                label = { Text("Real Name") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                        )
+
+                        OutlinedTextField(
+                                value = nickServPassword,
+                                onValueChange = { nickServPassword = it },
+                                label = { Text("NickServ Password (optional)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                visualTransformation = PasswordVisualTransformation(),
+                                supportingText = {
+                                    Text(
+                                            "Auto-identify with NickServ on connect",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colors.comment
+                                    )
+                                }
+                        )
+
+                        HorizontalDivider(color = colors.border)
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = useSasl, onCheckedChange = { useSasl = it })
+                            Text("Use SASL Authentication", color = colors.foreground)
+                        }
+
+                        if (useSasl) {
+                            OutlinedTextField(
+                                    value = saslUsername,
+                                    onValueChange = { saslUsername = it },
+                                    label = { Text("SASL Username") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                            )
+                            OutlinedTextField(
+                                    value = saslPassword,
+                                    onValueChange = { saslPassword = it },
+                                    label = { Text("SASL Password") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation()
+                            )
+                        }
+
+                        HorizontalDivider(color = colors.border)
+
+                        OutlinedTextField(
+                                value = autoJoinChannels,
+                                onValueChange = { autoJoinChannels = it },
+                                label = { Text("Auto-join Channels") },
+                                placeholder = { Text("#channel1, #channel2") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                supportingText = {
+                                    Text(
+                                            "Channels to join automatically after connecting",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colors.comment
+                                    )
+                                }
+                        )
+
+                        OutlinedTextField(
+                                value = onConnectCommands,
+                                onValueChange = { onConnectCommands = it },
+                                label = { Text("Commands on Connect") },
+                                placeholder = { Text("/msg NickServ IDENTIFY password") },
+                                modifier = Modifier.fillMaxWidth(),
+                                maxLines = 5,
+                                supportingText = {
+                                    Text(
+                                            "IRC commands to execute after connecting (one per line)",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colors.comment
+                                    )
+                                }
+                        )
+
+                        HorizontalDivider(color = colors.border)
+
+                        Text(
+                                "Proxy Settings",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = colors.cyan
+                        )
+
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Proxy Type", color = colors.foreground)
+                            Box {
+                                var expanded by remember { mutableStateOf(false) }
+                                TextButton(onClick = { expanded = true }) {
+                                    Text(proxyType.name, color = colors.cyan)
+                                    Icon(Icons.Default.ArrowDropDown, null, tint = colors.cyan)
+                                }
+                                DropdownMenu(
+                                        expanded = expanded,
+                                        onDismissRequest = { expanded = false },
+                                        containerColor = colors.windowBackground
+                                ) {
+                                    ProxyType.entries.forEach { type ->
+                                        DropdownMenuItem(
+                                                text = {
+                                                    Text(type.name, color = colors.foreground)
+                                                },
+                                                onClick = {
+                                                    proxyType = type
+                                                    expanded = false
+                                                }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (proxyType != ProxyType.NONE) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                        value = proxyHost,
+                                        onValueChange = { proxyHost = it },
+                                        label = { Text("Proxy Host") },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                )
+                                OutlinedTextField(
+                                        value = proxyPort,
+                                        onValueChange = {
+                                            proxyPort = it.filter { c -> c.isDigit() }
+                                        },
+                                        label = { Text("Port") },
+                                        modifier = Modifier.width(100.dp),
+                                        singleLine = true
+                                )
+                            }
+
+                            OutlinedTextField(
+                                    value = proxyUsername,
+                                    onValueChange = { proxyUsername = it },
+                                    label = { Text("Proxy Username (Optional)") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                    value = proxyPassword,
+                                    onValueChange = { proxyPassword = it },
+                                    label = { Text("Proxy Password (Optional)") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation()
+                            )
+                        }
+                    }
+                    // Scroll buttons for navigation without mouse wheel
+                    Column(
+                            modifier = Modifier.width(28.dp).fillMaxHeight().padding(start = 8.dp),
+                            verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        scrollState.animateScrollTo(
+                                                (scrollState.value - 150).coerceAtLeast(0)
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                    imageVector = Icons.Default.KeyboardArrowUp,
+                                    contentDescription = "Scroll Up",
+                                    tint = colors.cyan
+                            )
+                        }
+                        IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        scrollState.animateScrollTo(
+                                                (scrollState.value + 150).coerceAtMost(
+                                                        scrollState.maxValue
+                                                )
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                    imageVector = Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Scroll Down",
+                                    tint = colors.cyan
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                        onClick = {
+                            if (hostname.isNotBlank() &&
+                                            nickname.isNotBlank() &&
+                                            altNickname.isNotBlank() &&
+                                            username.isNotBlank() &&
+                                            realName.isNotBlank()
+                            ) {
+                                val config =
+                                        ServerConfig(
+                                                id = System.currentTimeMillis(),
+                                                serverName = serverName.ifBlank { hostname },
+                                                hostname = hostname,
+                                                port = port.toIntOrNull() ?: 6697,
+                                                useSsl = useSsl,
+                                                acceptSelfSignedCerts = acceptSelfSignedCerts,
+                                                serverPassword = serverPassword.ifBlank { null },
+                                                nickname = nickname,
+                                                altNickname = altNickname,
+                                                username = username,
+                                                realName = realName,
+                                                nickServPassword =
+                                                        nickServPassword.ifBlank { null },
+                                                useSasl = useSasl,
+                                                saslUsername =
+                                                        if (useSasl) saslUsername.ifBlank { null }
+                                                        else null,
+                                                saslPassword =
+                                                        if (useSasl) saslPassword.ifBlank { null }
+                                                        else null,
+                                                autoJoinChannels = autoJoinChannels,
+                                                onConnectCommands = onConnectCommands,
+                                                proxyType = proxyType,
+                                                proxyHost = proxyHost,
+                                                proxyPort = proxyPort.toIntOrNull() ?: 1080,
+                                                proxyUsername = proxyUsername.ifBlank { null },
+                                                proxyPassword = proxyPassword.ifBlank { null }
+                                        )
+                                onConnect(config)
+                            }
+                        },
+                        enabled =
+                                hostname.isNotBlank() &&
+                                        nickname.isNotBlank() &&
+                                        altNickname.isNotBlank() &&
+                                        username.isNotBlank() &&
+                                        realName.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.green)
+                ) { Text("Connect") }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) { Text("Cancel", color = colors.comment) }
+            }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun JoinChannelDialog(onDismiss: () -> Unit, onJoin: (String) -> Unit) {
+    val colors = AppColors.current
+    var channelName by remember { mutableStateOf("") }
+
+    AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = colors.windowBackground,
+            title = { Text("Join Channel", color = colors.foreground) },
+            text = {
+                OutlinedTextField(
+                        value = channelName,
+                        onValueChange = { channelName = it },
+                        label = { Text("Channel Name") },
+                        placeholder = { Text("#channel") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(
+                        onClick = {
+                            if (channelName.isNotBlank()) {
+                                val formatted =
+                                        if (channelName.startsWith("#")) channelName
+                                        else "#$channelName"
+                                onJoin(formatted)
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.green)
+                ) { Text("Join") }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) { Text("Cancel", color = colors.comment) }
+            }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsDialog(
+        userPreferences: UserPreferences,
+        onFontSizeChange: (FontSize) -> Unit,
+        onTimestampFormatChange: (TimestampFormat) -> Unit,
+        onUrlImageDisplayModeChange: (UrlImageDisplayMode) -> Unit,
+        onColoredNicknamesChange: (Boolean) -> Unit,
+        onShowJoinPartMessagesChange: (Boolean) -> Unit,
+        onSplitViewEnabledChange: (Boolean) -> Unit,
+        onSpellCheckEnabledChange: (Boolean) -> Unit,
+        onSpellCheckLanguageChange: (String) -> Unit,
+        onThemeChange: (String) -> Unit,
+        onOpenThemesFolder: () -> Unit,
+        onSoundAlertsEnabledChange: (Boolean) -> Unit,
+        onSoundVolumeChange: (Float) -> Unit,
+        onSoundOnMentionChange: (Boolean) -> Unit,
+        onSoundOnPrivateMessageChange: (Boolean) -> Unit,
+        onSoundOnHighlightChange: (Boolean) -> Unit, // Added missing param
+        onDismiss: () -> Unit
+) {
+    val colors = AppColors.current
+    var fontExpanded by remember { mutableStateOf(false) }
+    var timestampExpanded by remember { mutableStateOf(false) }
+    var matchExpanded by remember { mutableStateOf(false) }
+    var displayModeExpanded by remember { mutableStateOf(false) }
+    var languageExpanded by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val scrollState = rememberScrollState()
+
+    AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = colors.windowBackground,
+            title = { Text("Settings", color = colors.foreground) },
+            text = {
+                val scope = rememberCoroutineScope()
+                val scrollState = rememberScrollState()
+                Box(modifier = Modifier.width(420.dp).heightIn(max = 500.dp)) {
+                    Column(
+                            modifier =
+                                    Modifier.fillMaxWidth()
+                                            .verticalScroll(scrollState)
+                                            .padding(end = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Display Section
+                        Text(
+                                text = "Display",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = colors.cyan
+                        )
+
+                        HorizontalDivider(color = colors.border)
+
+                        // Theme Settings
+                        Text(
+                                text = "Appearance",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = colors.cyan,
+                                modifier = Modifier.padding(top = 8.dp)
+                        )
+
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Theme", color = colors.foreground)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // Theme Dropdown
+                                Box {
+                                    var themeExpanded by remember { mutableStateOf(false) }
+                                    TextButton(onClick = { themeExpanded = true }) {
+                                        Text(userPreferences.theme, color = colors.cyan)
+                                        Icon(Icons.Default.ArrowDropDown, null, tint = colors.cyan)
+                                    }
+                                    DropdownMenu(
+                                            expanded = themeExpanded,
+                                            onDismissRequest = { themeExpanded = false },
+                                            containerColor = colors.windowBackground
+                                    ) {
+                                        val themes =
+                                                com.loungecat.irc.ui.theme.ThemeManager
+                                                        .getAvailableThemes()
+                                        themes.forEach { themeName ->
+                                            DropdownMenuItem(
+                                                    text = {
+                                                        Text(themeName, color = colors.foreground)
+                                                    },
+                                                    onClick = {
+                                                        onThemeChange(themeName)
+                                                        themeExpanded = false
+                                                    }
+                                            )
+                                        }
+                                        HorizontalDivider(color = colors.border)
+                                        DropdownMenuItem(
+                                                text = {
+                                                    Text("Refresh Themes", color = colors.comment)
+                                                },
+                                                onClick = {
+                                                    com.loungecat.irc.ui.theme.ThemeManager
+                                                            .loadThemes()
+                                                    themeExpanded = false
+                                                }
+                                        )
+                                    }
+                                }
+                                IconButton(
+                                        onClick = onOpenThemesFolder,
+                                        modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                            imageVector = Icons.Default.FolderOpen,
+                                            contentDescription = "Open Themes Folder",
+                                            tint = colors.comment,
+                                            modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Font Size
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Font Size", color = colors.foreground)
+                            Box {
+                                TextButton(onClick = { fontExpanded = true }) {
+                                    Text(userPreferences.fontSize.name, color = colors.cyan)
+                                    Icon(Icons.Default.ArrowDropDown, null, tint = colors.cyan)
+                                }
+                                DropdownMenu(
+                                        expanded = fontExpanded,
+                                        onDismissRequest = { fontExpanded = false },
+                                        containerColor = colors.windowBackground
+                                ) {
+                                    FontSize.entries.forEach { size ->
+                                        DropdownMenuItem(
+                                                text = {
+                                                    Text(size.name, color = colors.foreground)
+                                                },
+                                                onClick = {
+                                                    onFontSizeChange(size)
+                                                    fontExpanded = false
+                                                }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Timestamp Format
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Timestamp Format", color = colors.foreground)
+                            Box {
+                                TextButton(onClick = { timestampExpanded = true }) {
+                                    val displayName =
+                                            when (userPreferences.timestampFormat) {
+                                                TimestampFormat.HOURS_12 -> "12-hour"
+                                                TimestampFormat.HOURS_24 -> "24-hour"
+                                                TimestampFormat.RELATIVE -> "Relative"
+                                            }
+                                    Text(displayName, color = colors.cyan)
+                                    Icon(Icons.Default.ArrowDropDown, null, tint = colors.cyan)
+                                }
+                                DropdownMenu(
+                                        expanded = timestampExpanded,
+                                        onDismissRequest = { timestampExpanded = false },
+                                        containerColor = colors.windowBackground
+                                ) {
+                                    DropdownMenuItem(
+                                            text = {
+                                                Text("12-hour (3:45 PM)", color = colors.foreground)
+                                            },
+                                            onClick = {
+                                                onTimestampFormatChange(TimestampFormat.HOURS_12)
+                                                timestampExpanded = false
+                                            }
+                                    )
+                                    DropdownMenuItem(
+                                            text = {
+                                                Text("24-hour (15:45)", color = colors.foreground)
+                                            },
+                                            onClick = {
+                                                onTimestampFormatChange(TimestampFormat.HOURS_24)
+                                                timestampExpanded = false
+                                            }
+                                    )
+                                    DropdownMenuItem(
+                                            text = {
+                                                Text("Relative (5m ago)", color = colors.foreground)
+                                            },
+                                            onClick = {
+                                                onTimestampFormatChange(TimestampFormat.RELATIVE)
+                                                timestampExpanded = false
+                                            }
+                                    )
+                                }
+                            }
+                        }
+
+                        // URL/Image Display Mode
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("URL/Image Previews", color = colors.foreground)
+                            Box {
+                                TextButton(onClick = { displayModeExpanded = true }) {
+                                    val displayName =
+                                            when (userPreferences.urlImageDisplayMode) {
+                                                UrlImageDisplayMode.INLINE -> "Inline"
+                                                UrlImageDisplayMode.COMPACT -> "Compact"
+                                                UrlImageDisplayMode.DISABLED -> "Disabled"
+                                            }
+                                    Text(displayName, color = colors.cyan)
+                                    Icon(Icons.Default.ArrowDropDown, null, tint = colors.cyan)
+                                }
+                                DropdownMenu(
+                                        expanded = displayModeExpanded,
+                                        onDismissRequest = { displayModeExpanded = false },
+                                        containerColor = colors.windowBackground
+                                ) {
+                                    DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                        "Inline (always show)",
+                                                        color = colors.foreground
+                                                )
+                                            },
+                                            onClick = {
+                                                onUrlImageDisplayModeChange(
+                                                        UrlImageDisplayMode.INLINE
+                                                )
+                                                displayModeExpanded = false
+                                            }
+                                    )
+                                    DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                        "Compact (click to expand)",
+                                                        color = colors.foreground
+                                                )
+                                            },
+                                            onClick = {
+                                                onUrlImageDisplayModeChange(
+                                                        UrlImageDisplayMode.COMPACT
+                                                )
+                                                displayModeExpanded = false
+                                            }
+                                    )
+                                    DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                        "Disabled (no previews)",
+                                                        color = colors.foreground
+                                                )
+                                            },
+                                            onClick = {
+                                                onUrlImageDisplayModeChange(
+                                                        UrlImageDisplayMode.DISABLED
+                                                )
+                                                displayModeExpanded = false
+                                            }
+                                    )
+                                }
+                            }
+                        }
+
+                        // Split View
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Split View", color = colors.foreground)
+                                Text(
+                                        "Show two channels side-by-side",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colors.comment
+                                )
+                            }
+                            Switch(
+                                    checked = userPreferences.splitViewEnabled,
+                                    onCheckedChange = onSplitViewEnabledChange,
+                                    colors =
+                                            SwitchDefaults.colors(
+                                                    checkedThumbColor = colors.green,
+                                                    checkedTrackColor =
+                                                            colors.green.copy(alpha = 0.5f)
+                                            )
+                            )
+                        }
+
+                        // Colored Nicknames
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Colored Nicknames", color = colors.foreground)
+                            Switch(
+                                    checked = userPreferences.coloredNicknames,
+                                    onCheckedChange = onColoredNicknamesChange,
+                                    colors =
+                                            SwitchDefaults.colors(
+                                                    checkedThumbColor = colors.green,
+                                                    checkedTrackColor =
+                                                            colors.green.copy(alpha = 0.5f)
+                                            )
+                            )
+                        }
+
+                        // Show Join/Part Messages
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Show Join/Part Messages", color = colors.foreground)
+                                Text(
+                                        "Display when users join or leave",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colors.comment
+                                )
+                            }
+                            Switch(
+                                    checked = userPreferences.showJoinPartMessages,
+                                    onCheckedChange = onShowJoinPartMessagesChange,
+                                    colors =
+                                            SwitchDefaults.colors(
+                                                    checkedThumbColor = colors.green,
+                                                    checkedTrackColor =
+                                                            colors.green.copy(alpha = 0.5f)
+                                            )
+                            )
+                        }
+
+                        // Spell Checking
+                        Text(
+                                text = "Spell Checking",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = colors.cyan,
+                                modifier = Modifier.padding(top = 8.dp)
+                        )
+
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Enable Spell Check", color = colors.foreground)
+                            Switch(
+                                    checked = userPreferences.spellCheckEnabled,
+                                    onCheckedChange = onSpellCheckEnabledChange,
+                                    colors =
+                                            SwitchDefaults.colors(
+                                                    checkedThumbColor = colors.green,
+                                                    checkedTrackColor =
+                                                            colors.green.copy(alpha = 0.5f)
+                                            )
+                            )
+                        }
+
+                        if (userPreferences.spellCheckEnabled) {
+                            Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Language", color = colors.foreground)
+                                Box {
+                                    TextButton(onClick = { languageExpanded = true }) {
+                                        Text(
+                                                userPreferences.spellCheckLanguage,
+                                                color = colors.cyan
+                                        )
+                                        Icon(Icons.Default.ArrowDropDown, null, tint = colors.cyan)
+                                    }
+                                    DropdownMenu(
+                                            expanded = languageExpanded,
+                                            onDismissRequest = { languageExpanded = false },
+                                            containerColor = colors.windowBackground
+                                    ) {
+                                        // Use SpellChecker available languages or fallback
+                                        val languages = listOf("en_US", "pl", "nl", "de")
+                                        languages.forEach { lang ->
+                                            DropdownMenuItem(
+                                                    text = {
+                                                        Text(lang, color = colors.foreground)
+                                                    },
+                                                    onClick = {
+                                                        onSpellCheckLanguageChange(lang)
+                                                        languageExpanded = false
+                                                    }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = colors.border)
+
+                        Text(
+                                text = "Sound Alerts",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = colors.cyan,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 8.dp)
+                        )
+
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Enable Sounds", color = colors.foreground)
+                            Switch(
+                                    checked = userPreferences.soundAlertsEnabled,
+                                    onCheckedChange = onSoundAlertsEnabledChange,
+                                    colors =
+                                            SwitchDefaults.colors(
+                                                    checkedThumbColor = colors.windowBackground,
+                                                    checkedTrackColor = colors.green,
+                                                    uncheckedThumbColor = colors.comment,
+                                                    uncheckedTrackColor = colors.background
+                                            )
+                            )
+                        }
+
+                        if (userPreferences.soundAlertsEnabled) {
+                            Column(modifier = Modifier.padding(start = 16.dp)) {
+                                Text("Volume", color = colors.foreground)
+                                Slider(
+                                        value = userPreferences.soundVolume,
+                                        onValueChange = onSoundVolumeChange,
+                                        valueRange = 0f..1f,
+                                        colors =
+                                                SliderDefaults.colors(
+                                                        thumbColor = colors.cyan,
+                                                        activeTrackColor = colors.cyan,
+                                                        inactiveTrackColor = colors.background
+                                                )
+                                )
+
+                                Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("On Mention", color = colors.foreground)
+                                    Checkbox(
+                                            checked = userPreferences.soundOnMention,
+                                            onCheckedChange = onSoundOnMentionChange
+                                    )
+                                }
+                                Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("On Private Message", color = colors.foreground)
+                                    Checkbox(
+                                            checked = userPreferences.soundOnPrivateMessage,
+                                            onCheckedChange = onSoundOnPrivateMessageChange
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    CustomVerticalScrollbar(
+                            scrollState = scrollState,
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = onDismiss) { Text("Close", color = colors.cyan) }
+            }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditServerDialog(
+        config: ServerConfig,
+        onDismiss: () -> Unit,
+        onSave: (ServerConfig) -> Unit
+) {
+    val colors = AppColors.current
+
+    var serverName by remember { mutableStateOf(config.serverName) }
+    var hostname by remember { mutableStateOf(config.hostname) }
+    var port by remember { mutableStateOf(config.port.toString()) }
+    var useSsl by remember { mutableStateOf(config.useSsl) }
+    var acceptSelfSignedCerts by remember { mutableStateOf(config.acceptSelfSignedCerts) }
+    var serverPassword by remember { mutableStateOf(config.serverPassword ?: "") }
+    var nickname by remember { mutableStateOf(config.nickname) }
+    var altNickname by remember { mutableStateOf(config.altNickname) }
+    var username by remember { mutableStateOf(config.username) }
+    var realName by remember { mutableStateOf(config.realName) }
+    var useSasl by remember { mutableStateOf(config.useSasl) }
+    var saslUsername by remember { mutableStateOf(config.saslUsername ?: "") }
+    var saslPassword by remember { mutableStateOf(config.saslPassword ?: "") }
+    var nickServPassword by remember { mutableStateOf(config.nickServPassword ?: "") }
+    var autoJoinChannels by remember { mutableStateOf(config.autoJoinChannels) }
+    var onConnectCommands by remember { mutableStateOf(config.onConnectCommands) }
+    var proxyType by remember { mutableStateOf(config.proxyType) }
+    var proxyHost by remember { mutableStateOf(config.proxyHost) }
+    var proxyPort by remember { mutableStateOf(config.proxyPort.toString()) }
+    var proxyUsername by remember { mutableStateOf(config.proxyUsername ?: "") }
+    var proxyPassword by remember { mutableStateOf(config.proxyPassword ?: "") }
+
+    AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = colors.windowBackground,
+            title = { Text("Edit Server", color = colors.foreground) },
+            text = {
+                val scope = rememberCoroutineScope()
+                val scrollState = rememberScrollState()
+                Box(modifier = Modifier.width(420.dp).heightIn(max = 500.dp)) {
+                    Column(
+                            modifier =
+                                    Modifier.fillMaxWidth()
+                                            .verticalScroll(scrollState)
+                                            .padding(end = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        OutlinedTextField(
+                                value = serverName,
+                                onValueChange = { serverName = it },
+                                label = { Text("Server Name") },
+                                placeholder = { Text("e.g., Libera Chat") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                        )
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                    value = hostname,
+                                    onValueChange = { hostname = it },
+                                    label = { Text("Hostname") },
+                                    placeholder = { Text("irc.libera.chat") },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true
+                            )
+                            OutlinedTextField(
+                                    value = port,
+                                    onValueChange = { port = it.filter { c -> c.isDigit() } },
+                                    label = { Text("Port") },
+                                    modifier = Modifier.width(100.dp),
+                                    singleLine = true
+                            )
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = useSsl, onCheckedChange = { useSsl = it })
+                            Text("Use SSL/TLS", color = colors.foreground)
+                        }
+
+                        if (useSsl) {
+                            Row(
+                                    modifier = Modifier.fillMaxWidth().padding(start = 32.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                            "Accept Self-Signed Certificates",
+                                            color = colors.foreground
+                                    )
+                                    Text(
+                                            "Less secure - only for trusted servers",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colors.orange.copy(alpha = 0.7f)
+                                    )
+                                }
+                                Checkbox(
+                                        checked = acceptSelfSignedCerts,
+                                        onCheckedChange = { acceptSelfSignedCerts = it }
+                                )
+                            }
+                        }
+
+                        OutlinedTextField(
+                                value = serverPassword,
+                                onValueChange = { serverPassword = it },
+                                label = { Text("Server Password (optional)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                visualTransformation = PasswordVisualTransformation()
+                        )
+
+                        HorizontalDivider(color = colors.border)
+
+                        OutlinedTextField(
+                                value = nickname,
+                                onValueChange = { nickname = it },
+                                label = { Text("Nickname") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                        )
+
+                        OutlinedTextField(
+                                value = altNickname,
+                                onValueChange = { altNickname = it },
+                                label = { Text("Alternative Nickname") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                        )
+
+                        OutlinedTextField(
+                                value = username,
+                                onValueChange = { username = it },
+                                label = { Text("Username") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                        )
+
+                        OutlinedTextField(
+                                value = realName,
+                                onValueChange = { realName = it },
+                                label = { Text("Real Name") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                        )
+
+                        OutlinedTextField(
+                                value = nickServPassword,
+                                onValueChange = { nickServPassword = it },
+                                label = { Text("NickServ Password (optional)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                visualTransformation = PasswordVisualTransformation(),
+                                supportingText = {
+                                    Text(
+                                            "Auto-identify with NickServ on connect",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colors.comment
+                                    )
+                                }
+                        )
+
+                        HorizontalDivider(color = colors.border)
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = useSasl, onCheckedChange = { useSasl = it })
+                            Text("Use SASL Authentication", color = colors.foreground)
+                        }
+
+                        if (useSasl) {
+                            OutlinedTextField(
+                                    value = saslUsername,
+                                    onValueChange = { saslUsername = it },
+                                    label = { Text("SASL Username") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                            )
+                            OutlinedTextField(
+                                    value = saslPassword,
+                                    onValueChange = { saslPassword = it },
+                                    label = { Text("SASL Password") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation()
+                            )
+                        }
+
+                        HorizontalDivider(color = colors.border)
+
+                        OutlinedTextField(
+                                value = autoJoinChannels,
+                                onValueChange = { autoJoinChannels = it },
+                                label = { Text("Auto-join Channels") },
+                                placeholder = { Text("#channel1, #channel2") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                supportingText = {
+                                    Text(
+                                            "Channels to join automatically after connecting",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colors.comment
+                                    )
+                                }
+                        )
+
+                        OutlinedTextField(
+                                value = onConnectCommands,
+                                onValueChange = { onConnectCommands = it },
+                                label = { Text("Commands on Connect") },
+                                placeholder = { Text("/msg NickServ IDENTIFY password") },
+                                modifier = Modifier.fillMaxWidth(),
+                                maxLines = 5,
+                                supportingText = {
+                                    Text(
+                                            "IRC commands to execute after connecting (one per line)",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colors.comment
+                                    )
+                                }
+                        )
+
+                        HorizontalDivider(color = colors.border)
+
+                        Text(
+                                "Proxy Settings",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = colors.cyan
+                        )
+
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Proxy Type", color = colors.foreground)
+                            Box {
+                                var expanded by remember { mutableStateOf(false) }
+                                TextButton(onClick = { expanded = true }) {
+                                    Text(proxyType.name, color = colors.cyan)
+                                    Icon(Icons.Default.ArrowDropDown, null, tint = colors.cyan)
+                                }
+                                DropdownMenu(
+                                        expanded = expanded,
+                                        onDismissRequest = { expanded = false },
+                                        containerColor = colors.windowBackground
+                                ) {
+                                    ProxyType.entries.forEach { type ->
+                                        DropdownMenuItem(
+                                                text = {
+                                                    Text(type.name, color = colors.foreground)
+                                                },
+                                                onClick = {
+                                                    proxyType = type
+                                                    expanded = false
+                                                }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (proxyType != ProxyType.NONE) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                        value = proxyHost,
+                                        onValueChange = { proxyHost = it },
+                                        label = { Text("Proxy Host") },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                )
+                                OutlinedTextField(
+                                        value = proxyPort,
+                                        onValueChange = {
+                                            proxyPort = it.filter { c -> c.isDigit() }
+                                        },
+                                        label = { Text("Port") },
+                                        modifier = Modifier.width(100.dp),
+                                        singleLine = true
+                                )
+                            }
+
+                            OutlinedTextField(
+                                    value = proxyUsername,
+                                    onValueChange = { proxyUsername = it },
+                                    label = { Text("Proxy Username (Optional)") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                    value = proxyPassword,
+                                    onValueChange = { proxyPassword = it },
+                                    label = { Text("Proxy Password (Optional)") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation()
+                            )
+                        }
+                    }
+                    CustomVerticalScrollbar(
+                            scrollState = scrollState,
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                        onClick = {
+                            if (hostname.isNotBlank() &&
+                                            nickname.isNotBlank() &&
+                                            altNickname.isNotBlank() &&
+                                            username.isNotBlank() &&
+                                            realName.isNotBlank()
+                            ) {
+                                val updatedConfig =
+                                        ServerConfig(
+                                                id = config.id,
+                                                serverName = serverName.ifBlank { hostname },
+                                                hostname = hostname,
+                                                port = port.toIntOrNull() ?: 6697,
+                                                useSsl = useSsl,
+                                                acceptSelfSignedCerts = acceptSelfSignedCerts,
+                                                serverPassword = serverPassword.ifBlank { null },
+                                                nickname = nickname,
+                                                altNickname = altNickname,
+                                                username = username,
+                                                realName = realName,
+                                                nickServPassword =
+                                                        nickServPassword.ifBlank { null },
+                                                useSasl = useSasl,
+                                                saslUsername =
+                                                        if (useSasl) saslUsername.ifBlank { null }
+                                                        else null,
+                                                saslPassword =
+                                                        if (useSasl) saslPassword.ifBlank { null }
+                                                        else null,
+                                                autoJoinChannels = autoJoinChannels,
+                                                onConnectCommands = onConnectCommands,
+                                                proxyType = proxyType,
+                                                proxyHost = proxyHost,
+                                                proxyPort = proxyPort.toIntOrNull() ?: 1080,
+                                                proxyUsername = proxyUsername.ifBlank { null },
+                                                proxyPassword = proxyPassword.ifBlank { null }
+                                        )
+                                onSave(updatedConfig)
+                            }
+                        },
+                        enabled =
+                                hostname.isNotBlank() &&
+                                        nickname.isNotBlank() &&
+                                        altNickname.isNotBlank() &&
+                                        username.isNotBlank() &&
+                                        realName.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.green)
+                ) { Text("Save & Reconnect") }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismiss) { Text("Cancel", color = colors.comment) }
+            }
+    )
+}

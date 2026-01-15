@@ -1,0 +1,29 @@
+services:
+  loungecat:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: loungecat-irc
+    restart: unless-stopped
+    volumes:
+      - ${HOME}/.loungecat:/data
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    environment:
+      - JAVA_OPTS=-Xmx1g -Xms512m -Dsun.java2d.uiScale=${UI_SCALE:-2}
+      - LOUNGECAT_DB_PATH=/data/loungecat.db
+      - LOUNGECAT_CONFIG=/data/preferences.json
+      - DISPLAY=${DISPLAY}
+      # Pass scaling variables from host
+      - GDK_SCALE=${GDK_SCALE}
+      - GDK_DPI_SCALE=${GDK_DPI_SCALE}
+      - QT_SCALE_FACTOR=${QT_SCALE_FACTOR}
+    networks:
+      - loungecat_network
+
+volumes:
+  loungecat_data:
+    driver: local
+
+networks:
+  loungecat_network:
+    driver: bridge

@@ -1,0 +1,75 @@
+[versions]
+kotlin = "2.1.0"
+compose-multiplatform = "1.7.1"
+coroutines = "1.9.0"
+kitteh-irc = "9.0.0"
+room = "2.7.0-alpha12"
+sqlite = "2.5.0-alpha12"
+sqlite-jdbc = "3.47.0.0"
+ksp = "2.1.0-1.0.29"
+jsoup = "1.18.3"
+coil = "3.0.4"
+datastore = "1.1.1"
+slf4j = "2.0.16"
+logback = "1.5.15"
+serialization = "1.7.3"
+languagetool = "6.5"
+junit = "4.13.2"
+shadow = "8.1.1"
+
+[libraries]
+# System Tray for Linux (AppIndicator support)
+dorkbox-systemtray = { module = "com.dorkbox:SystemTray", version = "4.4" }
+
+
+# Kotlin
+kotlin-stdlib = { group = "org.jetbrains.kotlin", name = "kotlin-stdlib", version.ref = "kotlin" }
+
+# Coroutines
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-swing = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-swing", version.ref = "coroutines" }
+
+# IRC Client (Kitteh) - Pure Java, works on desktop
+kitteh-irc = { group = "org.kitteh.irc", name = "client-lib", version.ref = "kitteh-irc" }
+
+# Room Database (Multiplatform)
+room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+sqlite-bundled = { group = "androidx.sqlite", name = "sqlite-bundled", version.ref = "sqlite" }
+
+# DataStore (Multiplatform)
+datastore-preferences-core = { group = "androidx.datastore", name = "datastore-preferences-core", version.ref = "datastore" }
+
+# Image Loading (Coil 3 - Multiplatform)
+coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
+
+# HTML Parsing
+jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
+
+# Serialization
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
+
+# Logging
+slf4j-api = { group = "org.slf4j", name = "slf4j-api", version.ref = "slf4j" }
+logback-classic = { group = "ch.qos.logback", name = "logback-classic", version.ref = "logback" }
+
+# SQLite JDBC for desktop
+sqlite-jdbc = { group = "org.xerial", name = "sqlite-jdbc", version.ref = "sqlite-jdbc" }
+languagetool-core = { group = "org.languagetool", name = "languagetool-core", version.ref = "languagetool" }
+languagetool-en = { group = "org.languagetool", name = "language-en", version.ref = "languagetool" }
+languagetool-de = { group = "org.languagetool", name = "language-de", version.ref = "languagetool" }
+languagetool-fr = { group = "org.languagetool", name = "language-fr", version.ref = "languagetool" }
+languagetool-nl = { group = "org.languagetool", name = "language-nl", version.ref = "languagetool" }
+languagetool-pl = { group = "org.languagetool", name = "language-pl", version.ref = "languagetool" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+
+[plugins]
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+room = { id = "androidx.room", version.ref = "room" }
+shadow = { id = "com.github.johnrengelman.shadow", version.ref = "shadow" }
