@@ -89,13 +89,6 @@ fun main() = application {
     // Linux-specific tray logic using dorkbox/SystemTray
     val scope = rememberCoroutineScope()
 
-import com.loungecat.irc.util.Logger
-
-// ...
-
-    // Linux-specific tray logic using dorkbox/SystemTray
-    val scope = rememberCoroutineScope()
-
     DisposableEffect(Unit) {
         var systemTray: dorkbox.systemTray.SystemTray? = null
 
@@ -285,9 +278,6 @@ import com.loungecat.irc.util.Logger
                     trayIcon.isImageAutoSize = false
 
             try {
-                // ... (imports)
-                // ...
-                // ...
                 if (iconStream != null) {
                      // ...
                     try {
