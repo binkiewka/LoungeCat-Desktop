@@ -77,7 +77,10 @@ fun main() = application {
     val windowState =
             rememberWindowState(
                     size = DpSize(1400.dp, 900.dp),
-                    position = WindowPosition.Aligned(Alignment.Center)
+                    position = WindowPosition.Aligned(Alignment.Center),
+                    placement =
+                            if (System.getenv("HEADLESS") == "true") WindowPlacement.Maximized
+                            else WindowPlacement.Floating
             )
 
     // Initialize standard tray state for non-Linux platforms (or fallback)
@@ -91,6 +94,11 @@ fun main() = application {
 
     DisposableEffect(Unit) {
         var systemTray: dorkbox.systemTray.SystemTray? = null
+
+        // Skip tray in headless mode
+        if (System.getenv("HEADLESS") == "true") {
+            return@DisposableEffect onDispose {}
+        }
 
         // Launch initialization in a coroutine to prevent blocking the UI thread
         val job =
@@ -237,7 +245,10 @@ fun main() = application {
     // Show if NOT Linux, OR if Linux but Dorkbox isn't ready yet (or failed)
     // We use manual AWT SystemTray here to ensure we can resize the image properly
     // and avoid the "black square" issue common with high-res icons on Linux AWT
-    if ((!isLinux || !isDorkboxReady) && SystemTray.isSupported()) {
+    if (System.getenv("HEADLESS") != "true" &&
+                    (!isLinux || !isDorkboxReady) &&
+                    SystemTray.isSupported()
+    ) {
         DisposableEffect(Unit) {
             Logger.d(
                     "Main",

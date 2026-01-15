@@ -1,0 +1,25 @@
+services:
+  loungecat-headless:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.headless
+    container_name: loungecat-headless
+    restart: unless-stopped
+    ports:
+      - "6080:6080"
+    volumes:
+      - ${HOME}/.loungecat:/data
+    environment:
+      - RESOLUTION=1920x1080x24
+      - JAVA_OPTS=-Xmx1g -Xms512m -Dsun.java2d.uiScale=1 -Dskiko.renderApi=SOFTWARE -Dsun.java2d.opengl=false
+      - SKIKO_RENDER_API=SOFTWARE
+      - SKIKO_RENDER_OPENGL=FALSE
+      - _JAVA_AWT_WM_NONREPARENTING=1
+      - HEADLESS=true
+    # No network isolation needed, but good practice
+    networks:
+      - loungecat_network
+
+networks:
+  loungecat_network:
+    driver: bridge

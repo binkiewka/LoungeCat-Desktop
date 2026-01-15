@@ -130,6 +130,22 @@ Run LoungeCat in an isolated container. Requires Docker installed.
    docker compose -f docker/docker-compose.yml up --build
    ```
 
+### 🕸️ Headless / Web Access
+
+Run LoungeCat on a headless server and access it via your web browser (noVNC).
+
+1. Run the headless startup script:
+
+   ```bash
+   ./start-headless.sh
+   ```
+
+2. Open your browser and navigate to:
+
+   **[http://localhost:6080](http://localhost:6080)**
+
+   *No password required by default.*
+
 ---
 
 ## 🛠 Configuration

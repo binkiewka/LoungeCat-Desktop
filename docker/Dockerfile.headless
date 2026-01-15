@@ -1,0 +1,61 @@
+FROM eclipse-temurin:17-jdk-alpine AS build
+
+WORKDIR /app
+
+COPY gradle gradle
+COPY gradlew .
+COPY build.gradle.kts .
+COPY settings.gradle.kts .
+COPY shared shared
+COPY desktopApp desktopApp
+
+RUN chmod +x gradlew
+RUN ./gradlew :desktopApp:shadowJar --no-daemon
+
+FROM ubuntu:22.04
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Java, X11, Window Manager, VNC, and noVNC dependencies
+RUN apt-get update && apt-get install -y \
+    openjdk-17-jre \
+    xvfb \
+    fluxbox \
+    x11vnc \
+    novnc \
+    websockify \
+    net-tools \
+    python3-numpy \
+    libxext6 \
+    libxrender1 \
+    libxtst6 \
+    libxi6 \
+    libfreetype6 \
+    libgl1 \
+    libgl1-mesa-dri \
+    mesa-utils \
+    fontconfig \
+    && rm -rf /var/lib/apt/lists/*
+
+# Fix for novnc/websockify path issues if necessary, or ensure index.html exists
+RUN ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html
+
+WORKDIR /app
+
+COPY --from=build /app/desktopApp/build/libs/*-all.jar app.jar
+COPY docker/entrypoint-headless.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+RUN mkdir -p /data
+VOLUME ["/data"]
+
+ENV LOUNGECAT_DB_PATH=/data/loungecat.db
+ENV LOUNGECAT_CONFIG=/data/preferences.json
+ENV JAVA_OPTS="-Xmx1g -Xms512m -Dsun.java2d.uiScale=1"
+
+# Expose noVNC port
+EXPOSE 6080
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
