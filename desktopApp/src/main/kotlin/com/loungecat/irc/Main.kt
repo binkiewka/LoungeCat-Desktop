@@ -97,7 +97,10 @@ fun main() = application {
                 scope.launch(Dispatchers.IO) {
                     if (isLinux) {
                         try {
-                            Logger.d("Main", "LoungeCat - Starting dorkbox SystemTray initialization...")
+                            Logger.d(
+                                    "Main",
+                                    "LoungeCat - Starting dorkbox SystemTray initialization..."
+                            )
 
                             // Advanced configurations
                             dorkbox.systemTray.SystemTray.DEBUG = true
@@ -111,7 +114,10 @@ fun main() = application {
                             // Initialize SystemTray on Background Thread (IO)
                             // We rely on Dorkbox internal threading to handle GTK loops
                             try {
-                                Logger.d("Main", "LoungeCat - Running SystemTray.get() on IO thread...")
+                                Logger.d(
+                                        "Main",
+                                        "LoungeCat - Running SystemTray.get() on IO thread..."
+                                )
                                 val tray = dorkbox.systemTray.SystemTray.get()
                                 Logger.d("Main", "LoungeCat - SystemTray.get() returned: $tray")
 
@@ -154,12 +160,15 @@ fun main() = application {
                                             g.dispose()
 
                                             tray.setImage(resized)
-                                            Logger.d("Main", 
+                                            Logger.d(
+                                                    "Main",
                                                     "LoungeCat - Dorkbox: Tray image set successfully (resized to 24x24)"
                                             )
                                         } catch (e: Exception) {
-                                            Logger.e("Main", 
-                                                    "LoungeCat - Dorkbox: Failed to set tray image: ${e.message}", e
+                                            Logger.e(
+                                                    "Main",
+                                                    "LoungeCat - Dorkbox: Failed to set tray image: ${e.message}",
+                                                    e
                                             )
                                         }
                                     }
@@ -187,19 +196,29 @@ fun main() = application {
                                                 }
                                         menu.add(quitItem)
                                     }
-                                    Logger.d("Main", "LoungeCat - DORKBOX TRAY ACTIVE and initialized")
+                                    Logger.d(
+                                            "Main",
+                                            "LoungeCat - DORKBOX TRAY ACTIVE and initialized"
+                                    )
                                 } else {
-                                    Logger.e("Main", 
+                                    Logger.e(
+                                            "Main",
                                             "LoungeCat - dorkbox SystemTray.get() returned null"
                                     )
                                 }
                             } catch (e: Throwable) {
-                                Logger.e("Main", 
-                                        "LoungeCat - Error in SystemTray initialization: ${e.message}", e
+                                Logger.e(
+                                        "Main",
+                                        "LoungeCat - Error in SystemTray initialization: ${e.message}",
+                                        e
                                 )
                             }
                         } catch (e: Exception) {
-                            Logger.e("Main", "LoungeCat - Error with Dorkbox setup: ${e.message}", e)
+                            Logger.e(
+                                    "Main",
+                                    "LoungeCat - Error with Dorkbox setup: ${e.message}",
+                                    e
+                            )
                         }
                     }
                 }
@@ -220,7 +239,10 @@ fun main() = application {
     // and avoid the "black square" issue common with high-res icons on Linux AWT
     if ((!isLinux || !isDorkboxReady) && SystemTray.isSupported()) {
         DisposableEffect(Unit) {
-            Logger.d("Main", "LoungeCat - FALLBACK TRAY ACTIVE (Manual AWT Tray) - isLinux: $isLinux, isDorkboxReady: $isDorkboxReady")
+            Logger.d(
+                    "Main",
+                    "LoungeCat - FALLBACK TRAY ACTIVE (Manual AWT Tray) - isLinux: $isLinux, isDorkboxReady: $isDorkboxReady"
+            )
             val tray = SystemTray.getSystemTray()
             var trayIcon: java.awt.TrayIcon? = null
 
@@ -277,15 +299,8 @@ fun main() = application {
                     // Disable auto-size if we are manually resizing to 24x24
                     trayIcon.isImageAutoSize = false
 
-            try {
-                if (iconStream != null) {
-                     // ...
-                    try {
-                        tray.add(trayIcon)
-                        Logger.d("Main", "LoungeCat - Manual AWT Tray added successfully (Opaque/RGB)")
-                    } catch (e: java.awt.AWTException) {
-                        Logger.e("Main", "LoungeCat - Type 1 Tray add failed: ${e.message}", e)
-                    }
+                    tray.add(trayIcon)
+                    Logger.d("Main", "LoungeCat - Manual AWT Tray added successfully (Opaque/RGB)")
                 }
             } catch (e: Exception) {
                 Logger.e("Main", "LoungeCat - Fallback tray setup failed: ${e.message}", e)
