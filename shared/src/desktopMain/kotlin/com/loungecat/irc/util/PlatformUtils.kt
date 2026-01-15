@@ -14,18 +14,23 @@ actual fun openUrl(url: String) {
 }
 
 object PlatformUtils {
-    
+
     fun getAppDataDirectory(): String {
         val os = System.getProperty("os.name").lowercase()
         val home = System.getProperty("user.home").replace("\\", "/")
-        
-        return when {
-            os.contains("win") -> "$home/AppData/Local/LoungeCat"
-            os.contains("mac") -> "$home/Library/Application Support/LoungeCat"
-            else -> "$home/.loungecat"
-        }
+
+        val path =
+                when {
+                    os.contains("win") -> "$home/AppData/Local/LoungeCat"
+                    os.contains("mac") -> "$home/Library/Application Support/LoungeCat"
+                    else -> "$home/.loungecat"
+                }
+
+        // Log this early so we catch it in the debug log
+        Logger.d("PlatformUtils", "Resolved AppData Path: $path (OS: $os, Home: $home)")
+        return path
     }
-    
+
     fun getDatabasePath(): String {
         val envPath = System.getenv("LOUNGECAT_DB_PATH")
         return if (!envPath.isNullOrBlank()) {
@@ -43,6 +48,6 @@ object PlatformUtils {
             "${getAppDataDirectory()}/preferences.json"
         }
     }
-    
+
     fun getPreferencesPath(): String = "${getAppDataDirectory()}/settings.preferences_pb"
 }
