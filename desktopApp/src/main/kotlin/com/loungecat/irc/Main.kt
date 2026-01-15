@@ -346,9 +346,7 @@ fun main() = application {
             visible = isVisible,
             state = windowState,
             title = "LoungeCat IRC",
-            undecorated = false,
-            transparent = false,
-            resizable = true,
+            title = "LoungeCat IRC",
             icon = painterResource(Res.drawable.logo_transparent),
             onKeyEvent = { keyEvent ->
                 when {
