@@ -37,11 +37,11 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Deb, TargetFormat.AppImage, TargetFormat.Msi, TargetFormat.Rpm)
             packageName = "LoungeCat"
-            packageVersion = "1.0.14"
+            packageVersion = "1.0.15"
             description = "Modern IRC Client for Linux"
             vendor = "LoungeCat"
             
-            modules("java.sql", "java.naming", "jdk.unsupported")
+            modules("java.sql", "java.naming", "jdk.unsupported", "java.net.http")
             
             linux {
                 iconFile.set(project.file("../shared/src/commonMain/composeResources/drawable/icon.png"))
