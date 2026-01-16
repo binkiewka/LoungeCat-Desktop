@@ -2,6 +2,7 @@ package com.loungecat.irc.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.loungecat.irc.data.model.ChannelUser
 import com.loungecat.irc.data.model.UserMode
 import com.loungecat.irc.data.model.UserPreferences
 import com.loungecat.irc.service.DesktopConnectionManager
@@ -32,7 +34,8 @@ fun ChannelPane(
         userPreferences: UserPreferences,
         onSendMessage: (String) -> Unit,
         onJoinChannel: () -> Unit = {},
-        onClosePane: (() -> Unit)? = null
+        onClosePane: (() -> Unit)? = null,
+        onUserClick: (ChannelUser) -> Unit = {}
 ) {
         val colors = AppColors.current
         var isUserListVisible by remember { mutableStateOf(true) }
@@ -233,6 +236,11 @@ fun ChannelPane(
                                                                         Row(
                                                                                 modifier =
                                                                                         Modifier.fillMaxWidth()
+                                                                                                .clickable {
+                                                                                                        onUserClick(
+                                                                                                                user
+                                                                                                        )
+                                                                                                }
                                                                                                 .padding(
                                                                                                         horizontal =
                                                                                                                 8.dp,

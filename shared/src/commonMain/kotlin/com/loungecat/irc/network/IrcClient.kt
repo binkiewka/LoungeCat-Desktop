@@ -12,6 +12,7 @@ import org.kitteh.irc.client.library.Client
 import org.kitteh.irc.client.library.element.Channel as KittehChannel
 import org.kitteh.irc.client.library.element.User
 import org.kitteh.irc.client.library.event.channel.*
+import org.kitteh.irc.client.library.event.client.ClientReceiveCommandEvent
 import org.kitteh.irc.client.library.event.client.ClientReceiveNumericEvent
 import org.kitteh.irc.client.library.event.connection.ClientConnectionEndedEvent
 import org.kitteh.irc.client.library.event.connection.ClientConnectionEstablishedEvent
@@ -264,6 +265,20 @@ class IrcClient(
         client?.sendRawLine(command)
     }
 
+    suspend fun closeQuery(nickname: String) {
+        _channels.update { channels -> channels - nickname }
+    }
+
+    suspend fun startQuery(nickname: String) {
+        _channels.update { channels ->
+            if (!channels.containsKey(nickname)) {
+                channels + (nickname to Channel(name = nickname, type = ChannelType.QUERY))
+            } else {
+                channels
+            }
+        }
+    }
+
     fun getCurrentNickname(): String = client?.nick ?: config.nickname
 
     inner class EventListener {
@@ -305,6 +320,110 @@ class IrcClient(
                                         type = MessageType.SERVER
                                 )
                         )
+                    }
+
+                    // Execute on-connect commands
+                    // Run these *before* auto-join, so we can auth with services if needed
+                    if (config.onConnectCommands.isNotBlank()) {
+                        val commands =
+                                config.onConnectCommands.lines().map { it.trim() }.filter {
+                                    it.isNotEmpty()
+                                }
+                        Logger.d(
+                                "IrcClient",
+                                "Executing on-connect commands: ${commands.size} commands"
+                        )
+
+                        commands.forEach { cmd ->
+                            try {
+                                // Ensure command logic handles both "/msg" and "msg" styles common
+                                // in configs
+                                val commandToParse = if (cmd.startsWith("/")) cmd else "/$cmd"
+
+                                when (val parsed = IrcCommandParser.parse(commandToParse)) {
+                                    is IrcCommand.Message -> {
+                                        client?.sendRawLine(
+                                                "PRIVMSG ${parsed.target} :${parsed.message}"
+                                        )
+                                    }
+                                    is IrcCommand.NickServ -> {
+                                        val args =
+                                                if (parsed.args.isNotBlank()) parsed.args
+                                                else "HELP"
+                                        client?.sendRawLine("PRIVMSG NickServ :$args")
+                                    }
+                                    is IrcCommand.ChanServ -> {
+                                        val args =
+                                                if (parsed.args.isNotBlank()) parsed.args
+                                                else "HELP"
+                                        client?.sendRawLine("PRIVMSG ChanServ :$args")
+                                    }
+                                    is IrcCommand.MemoServ -> {
+                                        val args =
+                                                if (parsed.args.isNotBlank()) parsed.args
+                                                else "HELP"
+                                        client?.sendRawLine("PRIVMSG MemoServ :$args")
+                                    }
+                                    is IrcCommand.Identify -> {
+                                        client?.sendRawLine(
+                                                "PRIVMSG NickServ :IDENTIFY ${parsed.args}"
+                                        )
+                                    }
+                                    is IrcCommand.Mode -> {
+                                        client?.sendRawLine("MODE ${parsed.modeString}")
+                                    }
+                                    is IrcCommand.Oper -> {
+                                        client?.sendRawLine("OPER ${parsed.args}")
+                                    }
+                                    is IrcCommand.Raw -> {
+                                        client?.sendRawLine(parsed.command)
+                                    }
+                                    // For commands not explicitly mishandled above, or Unknown, try
+                                    // to send as raw
+                                    // This covers generic cases or cases where the parser didn't
+                                    // match perfectly but it's valid raw irc
+                                    else -> {
+                                        // Fallback: If it was parsed as Unknown, it might be RAW.
+                                        // But if we forced a slash, we should strip it if it wasn't
+                                        // there originally?
+                                        // If user typed "PRIVMSG #foo :bar", added /, becomes
+                                        // "/PRIVMSG", parser says Unknown.
+                                        // We should send "PRIVMSG #foo :bar".
+
+                                        // Use the original cmd string, but ensure no leading slash
+                                        // for raw sending if it's not a client command
+                                        val rawCmd =
+                                                if (cmd.startsWith("/")) cmd.substring(1) else cmd
+                                        client?.sendRawLine(rawCmd)
+                                    }
+                                }
+
+                                // Small delay to ensure server processes auth before join
+                                kotlinx.coroutines.delay(500)
+                            } catch (e: Exception) {
+                                Logger.e(
+                                        "IrcClient",
+                                        "Failed to execute on-connect command: $cmd",
+                                        e
+                                )
+                            }
+                        }
+                    }
+
+                    // Auto-join channels
+                    if (config.autoJoinChannels.isNotBlank()) {
+                        val channelsToJoin =
+                                config.autoJoinChannels.split(",").map { it.trim() }.filter {
+                                    it.isNotEmpty()
+                                }
+                        Logger.d("IrcClient", "Auto-joining channels: $channelsToJoin")
+                        channelsToJoin.forEach { channel ->
+                            try {
+                                client?.addChannel(channel)
+                            } catch (e: Exception) {
+                                Logger.e("IrcClient", "Failed to auto-join channel: $channel", e)
+                            }
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -551,6 +670,39 @@ class IrcClient(
         }
 
         @Handler
+        fun onServerNotice(event: ClientReceiveCommandEvent) {
+            if (event.command == "NOTICE") {
+                try {
+                    scope.launch {
+                        val target = event.parameters.getOrNull(0) ?: ""
+                        val message = event.parameters.drop(1).joinToString(" ")
+                        val sender = event.actor.name
+                        val serverChannelName = "* ${config.serverName}"
+
+                        // Determine where to show the notice
+                        // If it's from a service (NickServ, etc) OR addressed to us privately, show
+                        // in server tab
+                        // (or potentially active tab, but server tab is safer for now)
+
+                        // We treat all notices as worth showing in Server tab for visibility
+                        // unless we want to route them to specific query windows.
+
+                        _messages.emit(
+                                IncomingMessage(
+                                        target = serverChannelName,
+                                        sender = sender,
+                                        content = message,
+                                        type = MessageType.NOTICE
+                                )
+                        )
+                    }
+                } catch (e: Exception) {
+                    Logger.e("IrcClient", ">>> EVENT HANDLER CRASHED: onServerNotice", e)
+                }
+            }
+        }
+
+        @Handler
         fun onUserNickChange(event: UserNickChangeEvent) {
             try {
                 scope.launch {
@@ -724,7 +876,109 @@ class IrcClient(
                     val serverChannelName = "* ${config.serverName}"
                     val numeric = event.numeric
 
+                    // Handle WHOIS and other server information numerics
                     when (numeric) {
+                        // WHOIS Numerics
+                        311, // RPL_WHOISUSER
+                        312, // RPL_WHOISSERVER
+                        313, // RPL_WHOISOPERATOR
+                        317, // RPL_WHOISIDLE
+                        318, // RPL_ENDOFWHOIS
+                        319, // RPL_WHOISCHANNELS
+                        301, // RPL_AWAY
+                        314, // RPL_WHOWASUSER
+                        369, // RPL_ENDOFWHOWAS
+                        307, // RPL_WHOISREGNICK
+                        330, // RPL_WHOISACCOUNT
+                        378, // RPL_WHOISHOST
+                        379, // RPL_WHOISMODES
+                        671, // RPL_WHOISSECURE
+                        276, // RPL_WHOISCERTFP
+                        -> {
+                            val message = event.parameters.drop(1).joinToString(" ")
+                            val content = if (numeric == 318) "End of WHOIS" else message
+                            _messages.emit(
+                                    IncomingMessage(
+                                            target = serverChannelName,
+                                            sender = "Server",
+                                            content = content,
+                                            type = MessageType.SYSTEM
+                                    )
+                            )
+                        }
+
+                        // Server Information / MOTD / Welcome
+                        // Server Information / MOTD / Welcome
+                        1,
+                        2,
+                        3,
+                        4,
+                        5, // Welcome sequence
+                        251,
+                        252,
+                        253,
+                        254,
+                        255,
+                        265,
+                        266, // LUSERS
+                        372,
+                        375,
+                        376 // MOTD
+                        -> {
+                            val content = event.parameters.drop(1).joinToString(" ")
+                            _messages.emit(
+                                    IncomingMessage(
+                                            target = serverChannelName,
+                                            sender = "Server",
+                                            content = content,
+                                            type = MessageType.SERVER
+                                    )
+                            )
+                        }
+
+                        // Handle Nickname In Use (433) specifically
+                        433 -> {
+                            val rejectedNick = event.parameters.getOrNull(1) ?: config.nickname
+                            val newNick =
+                                    if (rejectedNick == config.nickname &&
+                                                    config.altNickname.isNotBlank()
+                                    ) {
+                                        config.altNickname
+                                    } else {
+                                        rejectedNick +
+                                                "_" // Use underscore instead of default quote
+                                    }
+
+                            Logger.d(
+                                    "IrcClient",
+                                    "Nickname $rejectedNick in use, retrying with $newNick"
+                            )
+                            client?.sendRawLine("NICK $newNick")
+
+                            _messages.emit(
+                                    IncomingMessage(
+                                            target = serverChannelName,
+                                            sender = "Client",
+                                            content =
+                                                    "Nickname '$rejectedNick' is unavailable. Retrying with '$newNick'...",
+                                            type = MessageType.SYSTEM
+                                    )
+                            )
+                        }
+
+                        // General Errors
+                        in 400..599 -> {
+                            val target = event.parameters.getOrNull(0) ?: "*"
+                            val message = event.parameters.drop(1).joinToString(" ")
+                            _messages.emit(
+                                    IncomingMessage(
+                                            target = serverChannelName,
+                                            sender = "Error",
+                                            content = "$target: $message (Code: $numeric)",
+                                            type = MessageType.ERROR
+                                    )
+                            )
+                        }
                         1 -> { // RPL_WELCOME
                             if (!hasConnectedBefore) {
                                 hasConnectedBefore = true

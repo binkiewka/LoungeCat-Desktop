@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import com.loungecat.irc.data.model.ChannelUser
 import com.loungecat.irc.data.model.UserPreferences
 import com.loungecat.irc.service.DesktopConnectionManager
 import com.loungecat.irc.ui.theme.AppColors
@@ -27,7 +28,8 @@ fun ChatGrid(
         connectionManager: DesktopConnectionManager,
         userPreferences: UserPreferences,
         onSendMessage: (Long, String, String) -> Unit,
-        onJoinChannel: (Long) -> Unit = {}
+        onJoinChannel: (Long) -> Unit = {},
+        onUserClick: (ChannelUser) -> Unit = {}
 ) {
         val activeChannels = splitViewState.activeChannels
         val activePaneIndex = splitViewState.activePaneIndex
@@ -146,7 +148,8 @@ fun ChatGrid(
                                 onClosePane =
                                         if (activeChannels.size > 1) {
                                                 { splitViewState.closeChannel(index) }
-                                        } else null
+                                        } else null,
+                                onUserClick = onUserClick
                         )
                 }
         }

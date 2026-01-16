@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.loungecat.irc.data.model.*
+import com.loungecat.irc.data.model.ChannelUser
 import com.loungecat.irc.service.DesktopConnectionManager
 import com.loungecat.irc.ui.components.ChannelPane
 import com.loungecat.irc.ui.components.ChatGrid
@@ -373,7 +374,8 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                         onJoinChannel = { serverId ->
                             connectionManager.switchToServer(serverId)
                             showJoinChannelDialog = true
-                        }
+                        },
+                        onUserClick = { user -> selectedUserForContextMenu = user }
                 )
             } else {
                 // SINGLE VIEW MODE
@@ -389,7 +391,8 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                             onSendMessage = { msg ->
                                 connectionManager.sendMessage(currentSrv, currentCh, msg)
                             },
-                            onJoinChannel = { showJoinChannelDialog = true }
+                            onJoinChannel = { showJoinChannelDialog = true },
+                            onUserClick = { user -> selectedUserForContextMenu = user }
                     )
                 } else {
                     // Welcome / No Channel Selected State
@@ -518,7 +521,6 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                     editingServerConfig = null
                 },
                 onSave = { updatedConfig ->
-                    connectionManager.removeServer(editingServerConfig!!.id)
                     connectionManager.connect(updatedConfig)
                     showEditServerDialog = false
                     editingServerConfig = null

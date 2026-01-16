@@ -113,11 +113,27 @@ fun main() = application {
                             // Advanced configurations
                             dorkbox.systemTray.SystemTray.DEBUG = true
                             dorkbox.systemTray.SystemTray.FORCE_GTK2 = false
-                            // CRITICAL FIX: Force AppIndicator since libayatana-appindicator3-1 is
-                            // installed
-                            // Auto-detection seems to hang or fail
-                            dorkbox.systemTray.SystemTray.FORCE_TRAY_TYPE =
-                                    dorkbox.systemTray.SystemTray.TrayType.AppIndicator
+
+                            // Force AppIndicator to try and skip the 3-minute delay of
+                            // GtkStatusIcon
+                            try {
+                                dorkbox.systemTray.SystemTray.FORCE_TRAY_TYPE =
+                                        dorkbox.systemTray.SystemTray.TrayType.valueOf(
+                                                "AppIndicator"
+                                        )
+
+                                // Log available types for debugging (optional but helpful)
+                                val trayTypes = dorkbox.systemTray.SystemTray.TrayType.values()
+                                Logger.d(
+                                        "Main",
+                                        "Available TrayTypes: ${trayTypes.joinToString { it.name }}"
+                                )
+
+                                // CRITICAL FIX: Force AppIndicator
+                                Logger.d("Main", "Forcing TrayType to: AppIndicator (via valueOf)")
+                            } catch (e: Exception) {
+                                Logger.e("Main", "Could not force AppIndicator: ${e.message}")
+                            }
 
                             // Initialize SystemTray on Background Thread (IO)
                             // We rely on Dorkbox internal threading to handle GTK loops
@@ -242,13 +258,10 @@ fun main() = application {
     val notificationService = remember { DesktopNotificationService(trayState) }
 
     // Standard Tray Fallback
-    // Show if NOT Linux, OR if Linux but Dorkbox isn't ready yet (or failed)
+    // Show if NOT Linux. On Linux, user prefers wait over black box AWT.
     // We use manual AWT SystemTray here to ensure we can resize the image properly
     // and avoid the "black square" issue common with high-res icons on Linux AWT
-    if (System.getenv("HEADLESS") != "true" &&
-                    (!isLinux || !isDorkboxReady) &&
-                    SystemTray.isSupported()
-    ) {
+    if (System.getenv("HEADLESS") != "true" && !isLinux && SystemTray.isSupported()) {
         DisposableEffect(Unit) {
             Logger.d(
                     "Main",
@@ -272,20 +285,13 @@ fun main() = application {
                 if (iconStream != null) {
                     val originalImage = ImageIO.read(iconStream)
                     // Resize to 24x24 for Linux Tray (standard size)
-                    // USE TYPE_INT_RGB (No Alpha) to prevent "black square" bug on X11/Cinnamon
                     val resizedImage =
                             java.awt.image.BufferedImage(
                                     24,
                                     24,
-                                    java.awt.image.BufferedImage.TYPE_INT_RGB
+                                    java.awt.image.BufferedImage.TYPE_INT_ARGB
                             )
                     val g = resizedImage.createGraphics()
-
-                    // Fill background with standard gray (SystemColor.control) or light gray
-                    // This replaces transparency with a solid color that renders correctly
-                    g.color = java.awt.SystemColor.control
-                    g.fillRect(0, 0, 24, 24)
-
                     g.drawImage(originalImage, 0, 0, 24, 24, null)
                     g.dispose()
 
@@ -307,11 +313,14 @@ fun main() = application {
                     popup.add(quitItem)
 
                     trayIcon = java.awt.TrayIcon(resizedImage, "LoungeCat (Fallback)", popup)
-                    // Disable auto-size if we are manually resizing to 24x24
+                    // Auto-size might help if we feed it a larger image, but we are resizing
+                    // manually
+                    // to be safe.
+                    // However, let's keep it false for manual control.
                     trayIcon.isImageAutoSize = false
 
                     tray.add(trayIcon)
-                    Logger.d("Main", "LoungeCat - Manual AWT Tray added successfully (Opaque/RGB)")
+                    Logger.d("Main", "LoungeCat - Manual AWT Tray added successfully (Transparent)")
                 }
             } catch (e: Exception) {
                 Logger.e("Main", "LoungeCat - Fallback tray setup failed: ${e.message}", e)

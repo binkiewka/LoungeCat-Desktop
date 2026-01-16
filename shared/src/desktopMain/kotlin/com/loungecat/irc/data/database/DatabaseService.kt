@@ -45,6 +45,7 @@ object DatabaseService : DatabaseServiceInterface {
                 port INTEGER NOT NULL DEFAULT 6697,
                 use_ssl INTEGER NOT NULL DEFAULT 1,
                 nickname TEXT NOT NULL,
+                alt_nickname TEXT DEFAULT '',
                 username TEXT,
                 real_name TEXT,
                 use_sasl INTEGER NOT NULL DEFAULT 0,
@@ -82,6 +83,7 @@ object DatabaseService : DatabaseServiceInterface {
             // Add missing columns if they don't exist
             val migrations =
                     mapOf(
+                            "alt_nickname" to "TEXT DEFAULT ''",
                             "on_connect_commands" to "TEXT",
                             "nick_serv_password" to "TEXT",
                             "nick_serv_command" to "TEXT",
@@ -127,6 +129,8 @@ object DatabaseService : DatabaseServiceInterface {
                                                     port = rs.getInt("port"),
                                                     useSsl = rs.getInt("use_ssl") == 1,
                                                     nickname = rs.getString("nickname"),
+                                                    altNickname = rs.getString("alt_nickname")
+                                                                    ?: "",
                                                     username = rs.getString("username"),
                                                     realName = rs.getString("real_name"),
                                                     useSasl = rs.getInt("use_sasl") == 1,
@@ -187,12 +191,12 @@ object DatabaseService : DatabaseServiceInterface {
                     val sql =
                             """
                 INSERT INTO server_configs 
-                (id, server_name, hostname, port, use_ssl, nickname, username, real_name, 
+                (id, server_name, hostname, port, use_ssl, nickname, alt_nickname, username, real_name, 
                  use_sasl, sasl_username, sasl_password, auto_join_channels,
                  on_connect_commands, nick_serv_password, nick_serv_command,
                  pinned_cert_fingerprint, trust_on_first_use, auto_connect,
                  proxy_type, proxy_host, proxy_port, proxy_username, proxy_password)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent()
 
                     connection?.prepareStatement(sql)?.apply {
@@ -203,6 +207,7 @@ object DatabaseService : DatabaseServiceInterface {
                         setInt(idx++, config.port)
                         setInt(idx++, if (config.useSsl) 1 else 0)
                         setString(idx++, config.nickname)
+                        setString(idx++, config.altNickname)
                         setString(idx++, config.username)
                         setString(idx++, config.realName)
                         setInt(idx++, if (config.useSasl) 1 else 0)
@@ -235,7 +240,7 @@ object DatabaseService : DatabaseServiceInterface {
                     val sql =
                             """
                 UPDATE server_configs SET
-                server_name = ?, hostname = ?, port = ?, use_ssl = ?, nickname = ?,
+                server_name = ?, hostname = ?, port = ?, use_ssl = ?, nickname = ?, alt_nickname = ?,
                 username = ?, real_name = ?, use_sasl = ?, sasl_username = ?, sasl_password = ?, auto_join_channels = ?,
                 on_connect_commands = ?, nick_serv_password = ?, nick_serv_command = ?,
                 pinned_cert_fingerprint = ?, trust_on_first_use = ?, auto_connect = ?,
@@ -250,6 +255,7 @@ object DatabaseService : DatabaseServiceInterface {
                         setInt(idx++, config.port)
                         setInt(idx++, if (config.useSsl) 1 else 0)
                         setString(idx++, config.nickname)
+                        setString(idx++, config.altNickname)
                         setString(idx++, config.username)
                         setString(idx++, config.realName)
                         setInt(idx++, if (config.useSasl) 1 else 0)

@@ -274,7 +274,6 @@ class DesktopConnectionManager {
                 "DesktopConnectionManager",
                 "Server ID: ${configToUse.id}, Name: ${configToUse.serverName}, isNew: $isNew"
         )
-
         managerScope.launch {
             connectionMutex.withLock {
                 try {
@@ -282,16 +281,42 @@ class DesktopConnectionManager {
 
                     // Prevent duplicate connection attempts if already connected or connecting
                     if (existingConnection != null) {
+                        // If we are asked to save, we should check if the config has changed
+                        if (saveToDatabase) {
+                            if (configToUse.id != 0L && !isNew) {
+                                databaseService?.updateServerConfig(configToUse)
+                                Logger.d(
+                                        "DesktopConnectionManager",
+                                        "Updated server config in DB: ${configToUse.serverName}"
+                                )
+                            }
+                        }
+
                         if (existingConnection.isConnected() ||
                                         existingConnection.connectionState is
                                                 ConnectionState.Connecting
                         ) {
-                            Logger.d(
-                                    "DesktopConnectionManager",
-                                    "Already connected or connecting, switching to server"
-                            )
-                            switchToServer(configToUse.id)
-                            return@launch
+                            // Check if config effectively changed (ignoring transient fields if
+                            // any)
+                            // We compare relevant fields. Data class equals should be enough for
+                            // now.
+                            // Note: configToUse has autoConnect=true, we should match that or
+                            // ignore it.
+                            val currentConfig = existingConnection.config.copy(autoConnect = true)
+                            if (currentConfig == configToUse) {
+                                Logger.d(
+                                        "DesktopConnectionManager",
+                                        "Already connected with same config, switching view"
+                                )
+                                switchToServer(configToUse.id)
+                                return@launch
+                            } else {
+                                Logger.d(
+                                        "DesktopConnectionManager",
+                                        "Config changed while connected, reconnecting..."
+                                )
+                                // We proceed to disconnect below...
+                            }
                         }
 
                         // Cleanup existing connection (ensure Kitteh client is stopped)
@@ -485,67 +510,23 @@ class DesktopConnectionManager {
 
     fun partChannel(serverId: Long, channelName: String) {
         connections[serverId]?.let { connection ->
-            managerScope.launch { connection.client.partChannel(channelName) }
-            updateSavedChannels(serverId, channelName, false)
+            if (channelName.startsWith("#") ||
+                            channelName.startsWith("&") ||
+                            channelName.startsWith("+") ||
+                            channelName.startsWith("!")
+            ) {
+                managerScope.launch { connection.client.partChannel(channelName) }
+                updateSavedChannels(serverId, channelName, false)
+            } else {
+                // It's a query window, just close it locally
+                managerScope.launch { connection.client.closeQuery(channelName) }
+            }
         }
     }
 
     fun sendMessage(serverId: Long, channelName: String, message: String) {
-        connections[serverId]?.let { connection ->
-            managerScope.launch {
-                when (val command = IrcCommandParser.parse(message)) {
-                    is IrcCommand.NotACommand -> {
-                        connection.client.sendMessage(channelName, message)
-                    }
-                    else -> {
-                        // For commands, reuse existing logic by temporarily setting current channel
-                        // if needed?
-                        // Or just reimplement basic command handling for split view?
-                        // Most commands (JOIN, PART, etc) are global or specific.
-                        // Message, Action, etc can be handled directly.
-                        if (command is IrcCommand.Message) {
-                            connection.client.sendMessage(command.target, command.message)
-                        } else if (command is IrcCommand.Action) {
-                            connection.client.sendMessage(
-                                    channelName,
-                                    "\u0001ACTION ${command.action}\u0001"
-                            )
-                        } else if (command is IrcCommand.Raw) {
-                            connection.client.sendRawCommand(command.command)
-                        } else if (command is IrcCommand.Unknown) {
-                            // Helper to add system message to specific channel
-                            addSystemMessage(
-                                    serverId,
-                                    channelName,
-                                    "Unknown command: /${command.command}"
-                            )
-                        } else {
-                            // Fallback to strict processing or ignore complex commands for now in
-                            // split view
-                            // unless we fully Duplicate the parser logic.
-                            // Ideally IrcCommandParser returns an object we can handle on a
-                            // specific connection.
-                            // The existing sendMessage() logic is tightly coupled to current
-                            // channel.
-                            // We should refactor the main sendMessage to use this new method!
-                            // For now, let's just handle basic chat provided by the ChatPanel.
-                            // ChatPanel input basically sends text.
-                            if (message.startsWith("/")) {
-                                // Delegate to existing logic if it's a command, but it might act on
-                                // current channel?
-                                // Commands like /join work on context.
-                                // If I type /join #foo in split pane 2, it should assume server 2.
-                                // But existing logic uses _currentServerId.
-                                // I cannot easily reuse existing sendMessage for other servers
-                                // without changing _currentServerId logic.
-                                // So I will handle essential message types here.
-                            } else {
-                                connection.client.sendMessage(channelName, message)
-                            }
-                        }
-                    }
-                }
-            }
+        connections[serverId]?.let { _ ->
+            managerScope.launch { processCommand(serverId, channelName, message) }
         }
     }
 
@@ -555,209 +536,241 @@ class DesktopConnectionManager {
         val serverId = _currentServerId.value ?: return
         val channelName = _currentChannel.value
 
-        connections[serverId]?.let { connection ->
-            managerScope.launch {
-                when (val command = IrcCommandParser.parse(message)) {
-                    is IrcCommand.NotACommand -> {
-                        if (channelName != null) {
-                            connection.client.sendMessage(channelName, message)
-                        }
-                    }
-                    is IrcCommand.Join -> joinChannel(serverId, command.channel)
-                    is IrcCommand.Part -> {
-                        val target = command.channel ?: channelName
-                        if (target != null) {
-                            connection.client.sendRawCommand(
-                                    "PART $target :${command.message ?: "Leaving"}"
-                            )
-                            updateSavedChannels(serverId, target, false)
-                        }
-                    }
-                    is IrcCommand.Message ->
-                            connection.client.sendMessage(command.target, command.message)
-                    is IrcCommand.Action -> {
-                        if (channelName != null) {
-                            connection.client.sendMessage(
-                                    channelName,
-                                    "\u0001ACTION ${command.action}\u0001"
-                            )
-                        }
-                    }
-                    is IrcCommand.Nick ->
-                            connection.client.sendRawCommand("NICK ${command.newNick}")
-                    is IrcCommand.Whois ->
-                            connection.client.sendRawCommand("WHOIS ${command.nickname}")
-                    is IrcCommand.Quit -> {
-                        connection.client.sendRawCommand("QUIT :${command.message ?: "Leaving"}")
-                        disconnectServer(serverId)
-                    }
-                    is IrcCommand.Raw -> connection.client.sendRawCommand(command.command)
-                    is IrcCommand.Clear -> {
-                        if (channelName != null) {
-                            clearChannelHistory(serverId, channelName)
-                        }
-                    }
-                    is IrcCommand.Help -> {
-                        if (channelName != null) {
-                            addSystemMessage(serverId, channelName, IrcCommandParser.getHelpText())
-                        }
-                    }
-                    is IrcCommand.Ignore -> {
-                        ignoreUser(command.nickname)
-                        if (channelName != null) {
-                            addSystemMessage(
-                                    serverId,
-                                    channelName,
-                                    "Ignored user: ${command.nickname}"
-                            )
-                        }
-                    }
-                    is IrcCommand.Unignore -> {
-                        removeIgnoredUser(command.nickname)
-                        if (channelName != null) {
-                            addSystemMessage(
-                                    serverId,
-                                    channelName,
-                                    "Unignored user: ${command.nickname}"
-                            )
-                        }
-                    }
-                    is IrcCommand.Kick -> {
-                        if (channelName != null) {
-                            val kickCmd =
-                                    if (command.reason != null) {
-                                        "KICK $channelName ${command.nickname} :${command.reason}"
-                                    } else {
-                                        "KICK $channelName ${command.nickname}"
-                                    }
-                            connection.client.sendRawCommand(kickCmd)
-                        }
-                    }
-                    is IrcCommand.Ban -> {
-                        if (channelName != null) {
-                            connection.client.sendRawCommand(
-                                    "MODE $channelName +b ${command.nickname}!*@*"
-                            )
-                        }
-                    }
-                    is IrcCommand.Unban -> {
-                        if (channelName != null) {
-                            connection.client.sendRawCommand(
-                                    "MODE $channelName -b ${command.nickname}!*@*"
-                            )
-                        }
-                    }
-                    is IrcCommand.Voice -> {
-                        if (channelName != null) {
-                            connection.client.sendRawCommand(
-                                    "MODE $channelName +v ${command.nickname}"
-                            )
-                        }
-                    }
-                    is IrcCommand.Devoice -> {
-                        if (channelName != null) {
-                            connection.client.sendRawCommand(
-                                    "MODE $channelName -v ${command.nickname}"
-                            )
-                        }
-                    }
-                    is IrcCommand.Op -> {
-                        if (channelName != null) {
-                            connection.client.sendRawCommand(
-                                    "MODE $channelName +o ${command.nickname}"
-                            )
-                        }
-                    }
-                    is IrcCommand.Deop -> {
-                        if (channelName != null) {
-                            connection.client.sendRawCommand(
-                                    "MODE $channelName -o ${command.nickname}"
-                            )
-                        }
-                    }
-                    is IrcCommand.Mode -> {
-                        if (channelName != null) {
-                            connection.client.sendRawCommand(
-                                    "MODE $channelName ${command.modeString}"
-                            )
-                        }
-                    }
-                    is IrcCommand.Topic -> {
-                        if (channelName != null) {
-                            if (command.topic != null) {
-                                connection.client.sendRawCommand(
-                                        "TOPIC $channelName :${command.topic}"
-                                )
-                            } else {
-                                connection.client.sendRawCommand("TOPIC $channelName")
-                            }
-                        }
-                    }
-                    is IrcCommand.Invite -> {
-                        connection.client.sendRawCommand(
-                                "INVITE ${command.nickname} ${command.channel ?: channelName ?: ""}"
-                        )
-                    }
-                    is IrcCommand.List -> {
-                        connection.client.sendRawCommand(
-                                if (command.filter != null) "LIST ${command.filter}" else "LIST"
-                        )
-                    }
-                    is IrcCommand.Names -> {
-                        connection.client.sendRawCommand(
-                                "NAMES ${command.channel ?: channelName ?: ""}"
-                        )
-                    }
-                    is IrcCommand.Notice -> {
-                        connection.client.sendRawCommand(
-                                "NOTICE ${command.target} :${command.message}"
-                        )
-                    }
-                    is IrcCommand.Query -> {
-                        startPrivateMessage(command.nickname)
-                        if (command.message != null) {
-                            sendMessage(serverId, command.nickname, command.message)
-                        }
-                    }
-                    is IrcCommand.Cycle -> {
-                        val target = command.channel ?: channelName
-                        if (target != null) {
-                            managerScope.launch {
-                                connection.client.partChannel(target)
-                                delay(200) // Brief delay to ensure part is processed
-                                connection.client.joinChannel(target)
-                            }
-                        }
-                    }
-                    is IrcCommand.Away -> {
-                        connection.client.sendRawCommand(
-                                if (command.message != null) "AWAY :${command.message}" else "AWAY"
-                        )
-                    }
-                    is IrcCommand.Back -> connection.client.sendRawCommand("AWAY")
-                    is IrcCommand.Who -> connection.client.sendRawCommand("WHO ${command.mask}")
-                    is IrcCommand.Ping ->
-                            connection.client.sendRawCommand("PING ${command.target ?: ""}")
-                    is IrcCommand.Time ->
-                            connection.client.sendRawCommand("TIME ${command.server ?: ""}")
-                    is IrcCommand.Version ->
-                            connection.client.sendRawCommand("VERSION ${command.server ?: ""}")
-                    is IrcCommand.Motd ->
-                            connection.client.sendRawCommand("MOTD ${command.server ?: ""}")
-                    is IrcCommand.Info ->
-                            connection.client.sendRawCommand("INFO ${command.server ?: ""}")
-                    is IrcCommand.Unknown -> {
-                        if (channelName != null) {
-                            addSystemMessage(
-                                    serverId,
-                                    channelName,
-                                    "Unknown command: /${command.command}"
-                            )
-                        }
-                    }
-                    else -> {}
+        managerScope.launch { processCommand(serverId, channelName, message) }
+    }
+
+    private suspend fun processCommand(serverId: Long, channelName: String?, message: String) {
+        val connection = connections[serverId] ?: return
+        when (val command = IrcCommandParser.parse(message)) {
+            is IrcCommand.NotACommand -> {
+                if (channelName != null) {
+                    connection.client.sendMessage(channelName, message)
                 }
             }
+            is IrcCommand.Join -> joinChannel(serverId, command.channel)
+            is IrcCommand.Part -> {
+                val target = command.channel ?: channelName
+                if (target != null) {
+                    if (target.startsWith("#") ||
+                                    target.startsWith("&") ||
+                                    target.startsWith("+") ||
+                                    target.startsWith("!")
+                    ) {
+                        connection.client.sendRawCommand(
+                                "PART $target :${command.message ?: "Leaving"}"
+                        )
+                        updateSavedChannels(serverId, target, false)
+                    } else {
+                        // Close query locally
+                        connection.client.closeQuery(target)
+                    }
+                }
+            }
+            is IrcCommand.Message -> connection.client.sendMessage(command.target, command.message)
+            is IrcCommand.Action -> {
+                if (channelName != null) {
+                    connection.client.sendMessage(
+                            channelName,
+                            "\u0001ACTION ${command.action}\u0001"
+                    )
+                }
+            }
+            is IrcCommand.Nick -> connection.client.sendRawCommand("NICK ${command.newNick}")
+            is IrcCommand.Identify -> {
+                val msg = "IDENTIFY ${command.args}"
+                connection.client.sendRawCommand("PRIVMSG NickServ :$msg")
+                addSystemMessage(
+                        serverId,
+                        channelName ?: "* ${connection.config.serverName}",
+                        "Sent identification to NickServ"
+                )
+            }
+            is IrcCommand.Whois -> connection.client.sendRawCommand("WHOIS ${command.nickname}")
+            is IrcCommand.Quit -> {
+                val quitMsg = command.message ?: "Leaving"
+                // Send QUIT first
+                connection.client.sendRawCommand("QUIT :$quitMsg")
+                // Then disconnect locally
+                disconnectServer(serverId)
+            }
+            is IrcCommand.Raw -> connection.client.sendRawCommand(command.command)
+            is IrcCommand.Clear -> {
+                if (channelName != null) {
+                    clearChannelHistory(serverId, channelName)
+                }
+            }
+            is IrcCommand.Help -> {
+                if (channelName != null) {
+                    addSystemMessage(serverId, channelName, IrcCommandParser.getHelpText())
+                }
+            }
+            is IrcCommand.Ignore -> {
+                ignoreUser(command.nickname)
+                if (channelName != null) {
+                    addSystemMessage(serverId, channelName, "Ignored user: ${command.nickname}")
+                }
+            }
+            is IrcCommand.Unignore -> {
+                removeIgnoredUser(command.nickname)
+                if (channelName != null) {
+                    addSystemMessage(serverId, channelName, "Unignored user: ${command.nickname}")
+                }
+            }
+            is IrcCommand.Kick -> {
+                if (channelName != null) {
+                    val kickCmd =
+                            if (command.reason != null) {
+                                "KICK $channelName ${command.nickname} :${command.reason}"
+                            } else {
+                                "KICK $channelName ${command.nickname}"
+                            }
+                    connection.client.sendRawCommand(kickCmd)
+                }
+            }
+            is IrcCommand.Ban -> {
+                if (channelName != null) {
+                    connection.client.sendRawCommand("MODE $channelName +b ${command.nickname}!*@*")
+                }
+            }
+            is IrcCommand.Unban -> {
+                if (channelName != null) {
+                    connection.client.sendRawCommand("MODE $channelName -b ${command.nickname}!*@*")
+                }
+            }
+            is IrcCommand.Voice -> {
+                if (channelName != null) {
+                    connection.client.sendRawCommand("MODE $channelName +v ${command.nickname}")
+                }
+            }
+            is IrcCommand.Devoice -> {
+                if (channelName != null) {
+                    connection.client.sendRawCommand("MODE $channelName -v ${command.nickname}")
+                }
+            }
+            is IrcCommand.Op -> {
+                if (channelName != null) {
+                    connection.client.sendRawCommand("MODE $channelName +o ${command.nickname}")
+                }
+            }
+            is IrcCommand.Deop -> {
+                if (channelName != null) {
+                    connection.client.sendRawCommand("MODE $channelName -o ${command.nickname}")
+                }
+            }
+            is IrcCommand.Mode -> {
+                if (channelName != null) {
+                    connection.client.sendRawCommand("MODE $channelName ${command.modeString}")
+                }
+            }
+            is IrcCommand.Topic -> {
+                if (channelName != null) {
+                    if (command.topic != null) {
+                        connection.client.sendRawCommand("TOPIC $channelName :${command.topic}")
+                    } else {
+                        connection.client.sendRawCommand("TOPIC $channelName")
+                    }
+                }
+            }
+            is IrcCommand.Invite -> {
+                connection.client.sendRawCommand(
+                        "INVITE ${command.nickname} ${command.channel ?: channelName ?: ""}"
+                )
+            }
+            is IrcCommand.List -> {
+                connection.client.sendRawCommand(
+                        if (command.filter != null) "LIST ${command.filter}" else "LIST"
+                )
+            }
+            is IrcCommand.Names -> {
+                connection.client.sendRawCommand("NAMES ${command.channel ?: channelName ?: ""}")
+            }
+            is IrcCommand.Notice -> {
+                connection.client.sendRawCommand("NOTICE ${command.target} :${command.message}")
+            }
+            is IrcCommand.Query -> {
+                startPrivateMessage(command.nickname)
+                if (command.message != null) {
+                    sendMessage(serverId, command.nickname, command.message)
+                }
+            }
+            is IrcCommand.Cycle -> {
+                val target = command.channel ?: channelName
+                if (target != null) {
+                    connection.client.partChannel(target)
+                    delay(200) // Brief delay to ensure part is processed
+                    connection.client.joinChannel(target)
+                }
+            }
+            is IrcCommand.Away -> {
+                connection.client.sendRawCommand(
+                        if (command.message != null) "AWAY :${command.message}" else "AWAY"
+                )
+            }
+            is IrcCommand.Back -> connection.client.sendRawCommand("AWAY")
+            is IrcCommand.Who -> connection.client.sendRawCommand("WHO ${command.mask}")
+            is IrcCommand.Ping -> connection.client.sendRawCommand("PING ${command.target ?: ""}")
+            is IrcCommand.Time -> connection.client.sendRawCommand("TIME ${command.server ?: ""}")
+            is IrcCommand.Version ->
+                    connection.client.sendRawCommand("VERSION ${command.server ?: ""}")
+            is IrcCommand.Motd -> connection.client.sendRawCommand("MOTD ${command.server ?: ""}")
+            is IrcCommand.Info -> connection.client.sendRawCommand("INFO ${command.server ?: ""}")
+            is IrcCommand.NickServ -> {
+                val cmd =
+                        if (command.args.isNotBlank()) "PRIVMSG NickServ :${command.args}"
+                        else "PRIVMSG NickServ :HELP"
+                connection.client.sendRawCommand(cmd)
+            }
+            is IrcCommand.ChanServ -> {
+                val cmd =
+                        if (command.args.isNotBlank()) "PRIVMSG ChanServ :${command.args}"
+                        else "PRIVMSG ChanServ :HELP"
+                connection.client.sendRawCommand(cmd)
+            }
+            is IrcCommand.MemoServ -> {
+                val cmd =
+                        if (command.args.isNotBlank()) "PRIVMSG MemoServ :${command.args}"
+                        else "PRIVMSG MemoServ :HELP"
+                connection.client.sendRawCommand(cmd)
+            }
+            is IrcCommand.Links -> connection.client.sendRawCommand("LINKS ${command.server ?: ""}")
+            is IrcCommand.Map -> connection.client.sendRawCommand("MAP ${command.server ?: ""}")
+            is IrcCommand.Lusers -> connection.client.sendRawCommand("LUSERS ${command.mask ?: ""}")
+            is IrcCommand.Admin -> connection.client.sendRawCommand("ADMIN ${command.server ?: ""}")
+            is IrcCommand.Oper -> connection.client.sendRawCommand("OPER ${command.args}")
+            is IrcCommand.Kill ->
+                    connection.client.sendRawCommand("KILL ${command.nickname} :${command.reason}")
+            is IrcCommand.KLine ->
+                    connection.client.sendRawCommand("KLINE ${command.target} :${command.reason}")
+            is IrcCommand.GLine ->
+                    connection.client.sendRawCommand("GLINE ${command.target} :${command.reason}")
+            is IrcCommand.ZLine ->
+                    connection.client.sendRawCommand("ZLINE ${command.target} :${command.reason}")
+            is IrcCommand.Rehash -> connection.client.sendRawCommand("REHASH ${command.args ?: ""}")
+            is IrcCommand.Restart ->
+                    connection.client.sendRawCommand("RESTART ${command.args ?: ""}")
+            is IrcCommand.Die -> connection.client.sendRawCommand("DIE ${command.args ?: ""}")
+            is IrcCommand.Wallops -> connection.client.sendRawCommand("WALLOPS :${command.message}")
+            is IrcCommand.Saje ->
+                    connection.client.sendRawCommand("SAJE ${command.nickname} ${command.channel}")
+            is IrcCommand.KickBan -> {
+                if (channelName != null) {
+                    connection.client.sendRawCommand("MODE $channelName +b ${command.nickname}!*@*")
+                    val kickReason = command.reason ?: "Requested"
+                    connection.client.sendRawCommand(
+                            "KICK $channelName ${command.nickname} :$kickReason"
+                    )
+                }
+            }
+            is IrcCommand.Ctcp -> {
+                // CTCP is just a PRIVMSG with \u0001 wrapping
+                connection.client.sendMessage(command.target, "\u0001${command.message}\u0001")
+            }
+            is IrcCommand.Unknown -> {
+                if (channelName != null) {
+                    addSystemMessage(serverId, channelName, "Unknown command: /${command.command}")
+                }
+            }
+            else -> {}
         }
     }
 
@@ -802,15 +815,7 @@ class DesktopConnectionManager {
         val serverId = _currentServerId.value ?: return
         managerScope.launch {
             connections[serverId]?.let { connection ->
-                val currentChannels = connection.client.channels.value
-                if (!currentChannels.containsKey(nickname)) {
-                    val updatedChannels =
-                            currentChannels +
-                                    (nickname to Channel(name = nickname, type = ChannelType.QUERY))
-                    connection.client.channels.value.plus(
-                            nickname to Channel(name = nickname, type = ChannelType.QUERY)
-                    )
-                }
+                connection.client.startQuery(nickname)
                 setCurrentChannel(nickname)
             }
         }
