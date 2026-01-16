@@ -15,6 +15,27 @@
   - **Inline Image Previews**: Automatically displays previews for image links (can be toggled).
   - **Formatted Text**: Full support for IRC colors, bold, italic, and underline (mIRC codes).
 
+## 📸 Screenshots
+
+### 🎭 Themes
+
+| | | |
+|:---:|:---:|:---:|
+| ![Theme 1](screens/themes/1.jpg) | ![Theme 2](screens/themes/2.jpg) | ![Theme 3](screens/themes/3.jpg) |
+
+### 🖥️ Split View
+
+| | | |
+|:---:|:---:|:---:|
+| ![Split View 1](screens/split_screen/1.jpg) | ![Split View 2](screens/split_screen/2.jpg) | ![Split View 3](screens/split_screen/3.jpg) |
+
+### ⚙️ Settings
+
+| | | |
+|:---:|:---:|:---:|
+| ![Settings 1](screens/settings/1.jpg) | ![Settings 2](screens/settings/2.jpg) | ![Settings 3](screens/settings/3.jpg) |
+| ![Settings 4](screens/settings/4.jpg) | ![Settings 5](screens/settings/5.jpg) | ![Settings 6](screens/settings/6.jpg) |
+
 ### 💬 Chat Experience
 
 - **Spell Checking**:

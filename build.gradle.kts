@@ -10,7 +10,7 @@ plugins {
 
 allprojects {
     group = "com.loungecat.irc"
-    version = "1.0.13"
+    version = "1.0.14"
 }
 
 tasks.register("clean", Delete::class) {

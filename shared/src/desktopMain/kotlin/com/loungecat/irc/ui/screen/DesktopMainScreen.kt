@@ -45,7 +45,6 @@ import com.loungecat.irc.ui.components.rememberSplitViewState
 import com.loungecat.irc.ui.theme.AppColors
 import com.loungecat.irc.util.TabCompletionHelper
 import java.util.*
-import kotlinx.coroutines.launch
 
 // private enum class ActivePane {
 //    LEFT,
@@ -992,9 +991,12 @@ private fun AddServerDialog(onDismiss: () -> Unit, onConnect: (ServerConfig) -> 
             text = {
                 val scope = rememberCoroutineScope()
                 val scrollState = rememberScrollState()
-                Row(modifier = Modifier.width(420.dp).heightIn(max = 500.dp)) {
+                Box(modifier = Modifier.width(420.dp).heightIn(max = 500.dp)) {
                     Column(
-                            modifier = Modifier.weight(1f).verticalScroll(scrollState),
+                            modifier =
+                                    Modifier.fillMaxWidth()
+                                            .verticalScroll(scrollState)
+                                            .padding(end = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         OutlinedTextField(
@@ -1249,46 +1251,10 @@ private fun AddServerDialog(onDismiss: () -> Unit, onConnect: (ServerConfig) -> 
                             )
                         }
                     }
-                    // Scroll buttons for navigation without mouse wheel
-                    Column(
-                            modifier = Modifier.width(28.dp).fillMaxHeight().padding(start = 8.dp),
-                            verticalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        IconButton(
-                                onClick = {
-                                    scope.launch {
-                                        scrollState.animateScrollTo(
-                                                (scrollState.value - 150).coerceAtLeast(0)
-                                        )
-                                    }
-                                },
-                                modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                    imageVector = Icons.Default.KeyboardArrowUp,
-                                    contentDescription = "Scroll Up",
-                                    tint = colors.cyan
-                            )
-                        }
-                        IconButton(
-                                onClick = {
-                                    scope.launch {
-                                        scrollState.animateScrollTo(
-                                                (scrollState.value + 150).coerceAtMost(
-                                                        scrollState.maxValue
-                                                )
-                                        )
-                                    }
-                                },
-                                modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                    imageVector = Icons.Default.KeyboardArrowDown,
-                                    contentDescription = "Scroll Down",
-                                    tint = colors.cyan
-                            )
-                        }
-                    }
+                    CustomVerticalScrollbar(
+                            scrollState = scrollState,
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                    )
                 }
             },
             confirmButton = {
