@@ -37,7 +37,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Deb, TargetFormat.AppImage, TargetFormat.Msi, TargetFormat.Rpm)
             packageName = "LoungeCat"
-            packageVersion = "1.0.12"
+            packageVersion = "1.0.13"
             description = "Modern IRC Client for Linux"
             vendor = "LoungeCat"
             

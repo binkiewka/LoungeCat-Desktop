@@ -36,6 +36,7 @@ object PastebinService {
      * @return The URL of the uploaded paste, or null on failure
      */
     suspend fun upload(content: String, filename: String = "paste.txt"): String? {
+        val formattedContent = wrapText(content)
         return withContext(Dispatchers.IO) {
             try {
                 val boundary = UUID.randomUUID().toString()
@@ -47,13 +48,14 @@ object PastebinService {
                         "Content-Disposition: form-data; name=\"file\"; filename=\"$filename\"\r\n"
                 )
                 bodyBuilder.append("Content-Type: text/plain\r\n\r\n")
-                bodyBuilder.append(content)
+                bodyBuilder.append(formattedContent)
                 bodyBuilder.append("\r\n--$boundary--\r\n")
 
                 val request =
                         HttpRequest.newBuilder()
                                 .uri(URI.create(PASTEBIN_URL))
                                 .header("Content-Type", "multipart/form-data; boundary=$boundary")
+                                .header("User-Agent", "LoungeCat/1.0")
                                 .POST(HttpRequest.BodyPublishers.ofString(bodyBuilder.toString()))
                                 .build()
 
@@ -75,6 +77,10 @@ object PastebinService {
                 null
             }
         }
+    }
+
+    private fun wrapText(text: String): String {
+        return text.replace(". ", ".\n").replace("! ", "!\n").replace("? ", "?\n")
     }
 
     /**

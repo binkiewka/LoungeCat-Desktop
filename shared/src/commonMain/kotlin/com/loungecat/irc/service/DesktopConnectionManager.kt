@@ -430,7 +430,12 @@ class DesktopConnectionManager {
 
     fun connectServer(serverId: Long) {
         managerScope.launch {
-            connections[serverId]?.let { connection -> connect(connection.config) }
+            val connection = connections[serverId]
+            if (connection != null) {
+                connect(connection.config)
+            } else {
+                Logger.d("DesktopConnectionManager", "No connection found for $serverId")
+            }
         }
     }
 
@@ -804,8 +809,11 @@ class DesktopConnectionManager {
 
     fun setCurrentChannel(channelName: String) {
         val serverId = _currentServerId.value ?: return
-        connections[serverId]?.let { connection ->
-            // Try to load cached messages if we don't have any for this channel
+
+        _connections.update { currentConnections ->
+            val connection = currentConnections[serverId] ?: return@update currentConnections
+
+            // Try to load connected messages if we don't have any for this channel
             val currentChannelMessages = connection.messages[channelName]
             val updatedMessages =
                     if (currentChannelMessages.isNullOrEmpty()) {
@@ -827,9 +835,19 @@ class DesktopConnectionManager {
 
             val updatedConnection =
                     connection.copy(currentChannel = channelName, messages = updatedMessages)
-            _connections.update { it + (serverId to updatedConnection) }
+
+            // Side effects (updating other observables) - risky inside update block if they trigger
+            // other updates
+            // but these are just StateFlow value sets, so it's fine.
+            // Ideally should be done after update, but we need the new data.
+            // We'll do it after the update block using the result.
+            currentConnections + (serverId to updatedConnection)
+        }
+
+        // Update derived state
+        connections[serverId]?.let { updatedConnection ->
             _currentChannel.value = channelName
-            _messages.value = updatedMessages
+            _messages.value = updatedConnection.messages
         }
     }
 
@@ -965,7 +983,12 @@ class DesktopConnectionManager {
     }
 
     private fun updateConnectionState(serverId: Long, state: ConnectionState) {
-        connections[serverId]?.let { connection ->
+        // Logger.d("DesktopConnectionManager", "DEBUG: updateConnectionState server=$serverId
+        // state=$state")
+
+        _connections.update { currentConnections ->
+            val connection = currentConnections[serverId] ?: return@update currentConnections
+
             val updatedConnection =
                     when (state) {
                         is ConnectionState.Connected -> {
@@ -988,14 +1011,14 @@ class DesktopConnectionManager {
                         }
                         else -> connection.copy(connectionState = state)
                     }
-            _connections.update { it + (serverId to updatedConnection) }
-
-            if (_currentServerId.value == serverId) {
-                _connectionState.value = state
-            }
-
-            updateServerList()
+            currentConnections + (serverId to updatedConnection)
         }
+
+        if (_currentServerId.value == serverId) {
+            _connectionState.value = state
+        }
+
+        updateServerList()
     }
 
     private fun scheduleReconnect(serverId: Long, attempt: Int) {
@@ -1050,17 +1073,19 @@ class DesktopConnectionManager {
     }
 
     private fun updateChannels(serverId: Long, channels: Map<String, Channel>) {
-        connections[serverId]?.let { connection ->
-            val channelList = channels.values.toList()
+        val channelList = channels.values.toList()
+
+        _connections.update { currentConnections ->
+            val connection = currentConnections[serverId] ?: return@update currentConnections
             val updatedConnection = connection.copy(channels = channelList)
-            _connections.update { it + (serverId to updatedConnection) }
-
-            if (_currentServerId.value == serverId) {
-                _channels.value = channelList
-            }
-
-            updateServerList()
+            currentConnections + (serverId to updatedConnection)
         }
+
+        if (_currentServerId.value == serverId) {
+            _channels.value = channelList
+        }
+
+        updateServerList()
     }
 
     private fun updateMessages(serverId: Long, message: IncomingMessage) {
@@ -1069,7 +1094,9 @@ class DesktopConnectionManager {
             return
         }
 
-        connections[serverId]?.let { connection ->
+        _connections.update { currentConnections ->
+            val connection = currentConnections[serverId] ?: return@update currentConnections
+
             val updatedMessages = connection.messages.toMutableMap()
             val targetMessages =
                     updatedMessages.getOrDefault(message.target, emptyList()).toMutableList()
@@ -1082,21 +1109,28 @@ class DesktopConnectionManager {
             updatedMessages[message.target] = targetMessages
 
             val updatedConnection = connection.copy(messages = updatedMessages)
-            _connections.update { it + (serverId to updatedConnection) }
 
-            if (_currentServerId.value == serverId) {
-                _messages.value = updatedMessages
-            }
-
-            // Save to message cache (debounced in cache implementation)
+            // Side effect: Save to cache (safe to call here or outside, but we need targetMessages)
             messageCacheSaver?.invoke(serverId, message.target, targetMessages)
 
-            if (message.type == MessageType.NORMAL) {
-                processMessageUrls(message)
-            }
+            currentConnections + (serverId to updatedConnection)
+        }
 
-            if (!message.isSelf && message.type == MessageType.NORMAL) {
-                val nickname = connection.config.nickname
+        // Update active view if needed
+        if (_currentServerId.value == serverId) {
+            // We can't easily get the just-updated connection here without another map lookup
+            // but since we just updated it, we can re-fetch
+            connections[serverId]?.let { _messages.value = it.messages }
+        }
+
+        if (message.type == MessageType.NORMAL) {
+            processMessageUrls(message)
+        }
+
+        // Check for mentions and highlights
+        if (!message.isSelf && message.type == MessageType.NORMAL) {
+            connections[serverId]?.let { currentConnection ->
+                val nickname = currentConnection.config.nickname
                 val highlightWords = _userPreferences.value.highlightWords
 
                 // Check for nick mention
@@ -1180,8 +1214,11 @@ class DesktopConnectionManager {
     }
 
     private fun updateServerList() {
-        _servers.value =
-                connections.values.map { connection ->
+        // Take a snapshot of values to avoid concurrent mod issues during map
+        val currentConnections = connections.values.toList()
+
+        val newServerList =
+                currentConnections.map { connection ->
                     ServerListItem(
                             serverId = connection.serverId,
                             serverName = connection.config.serverName,
@@ -1191,6 +1228,7 @@ class DesktopConnectionManager {
                             channels = connection.channels
                     )
                 }
+        _servers.value = newServerList
     }
 }
 
