@@ -544,7 +544,7 @@ class DesktopConnectionManager {
         when (val command = IrcCommandParser.parse(message)) {
             is IrcCommand.NotACommand -> {
                 if (channelName != null) {
-                    connection.client.sendMessage(channelName, message)
+                    sendMessageOrUsePastebin(connection, channelName, message)
                 }
             }
             is IrcCommand.Join -> joinChannel(serverId, command.channel)
@@ -566,7 +566,8 @@ class DesktopConnectionManager {
                     }
                 }
             }
-            is IrcCommand.Message -> connection.client.sendMessage(command.target, command.message)
+            is IrcCommand.Message ->
+                    sendMessageOrUsePastebin(connection, command.target, command.message)
             is IrcCommand.Action -> {
                 if (channelName != null) {
                     connection.client.sendMessage(
@@ -771,6 +772,33 @@ class DesktopConnectionManager {
                 }
             }
             else -> {}
+        }
+    }
+
+    private suspend fun sendMessageOrUsePastebin(
+            connection: ServerConnection,
+            target: String,
+            message: String
+    ) {
+        if (PastebinService.shouldPaste(message)) {
+            addSystemMessage(
+                    connection.serverId,
+                    target,
+                    "Message too long (${message.length} chars), uploading to pastebin..."
+            )
+            val pastedUrl = PastebinService.uploadAndFormat(message)
+            if (pastedUrl != null) {
+                connection.client.sendMessage(target, pastedUrl)
+            } else {
+                addSystemMessage(
+                        connection.serverId,
+                        target,
+                        "Pastebin upload failed. Sending original message."
+                )
+                connection.client.sendMessage(target, message)
+            }
+        } else {
+            connection.client.sendMessage(target, message)
         }
     }
 

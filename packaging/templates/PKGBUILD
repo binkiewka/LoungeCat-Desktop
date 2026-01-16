@@ -1,25 +1,51 @@
 # Maintainer: LoungeCat <loungecat@example.com>
-pkgname=loungecat-bin
+pkgname=loungecat
 pkgver=${VERSION}
 pkgrelease=1
 pkgdesc="Modern IRC Client for Linux"
 arch=('x86_64')
 url="https://github.com/binkiewka/LoungeCat-Desktop"
 license=('MIT')
-depends=('glibc' 'alsa-lib' 'libx11' 'libxext' 'libxi' 'libxrender' 'libxtst' 'freetype2')
-provides=('loungecat')
-conflicts=('loungecat')
-source=("${url}/releases/download/v${pkgver}/LoungeCat_${pkgver}_amd64.deb")
-sha256sums=('${DEB_HASH}')
+depends=('glibc' 'alsa-lib' 'libx11' 'libxext' 'libxi' 'libxrender' 'libxtst' 'freetype2' 'jre17-openjdk')
+makedepends=('jdk17-openjdk' 'git')
+source=("${url}/archive/v${pkgver}.tar.gz")
+sha256sums=('SKIP') # We should ideally use the hash, but for templates SKIP is often used until release
+
+prepare() {
+    cd "${srcdir}/LoungeCat-Desktop-${pkgver}"
+    chmod +x gradlew
+}
+
+build() {
+    cd "${srcdir}/LoungeCat-Desktop-${pkgver}"
+    # Use the included Gradle wrapper
+    ./gradlew :desktopApp:createDistributable --no-daemon
+}
 
 package() {
-    # The .deb file is extracted by makepkg into $srcdir
-    # It usually contains data.tar.xz (or data.tar.gz)
+    cd "${srcdir}/LoungeCat-Desktop-${pkgver}"
     
-    msg2 "Extracting data.tar.xz..."
-    # Note: makepkg automatically extracts the .deb if it recognizes the extension,
-    # putting 'data.tar.xz', 'control.tar.gz', etc in $srcdir.
-    # We then need to extract data.tar.xz to $pkgdir
+    install -d "${pkgdir}/opt/${pkgname}"
+    cp -r desktopApp/build/compose/binaries/main/app/* "${pkgdir}/opt/${pkgname}/"
     
-    bsdtar -xf "${srcdir}/data.tar.xz" -C "${pkgdir}"
+    install -d "${pkgdir}/usr/bin"
+    ln -s "/opt/${pkgname}/LoungeCat" "${pkgdir}/usr/bin/${pkgname}"
+    
+    install -d "${pkgdir}/usr/share/applications"
+    
+    # Create valid desktop entry with MimeType
+    cat > "${pkgdir}/usr/share/applications/${pkgname}.desktop" <<EOF
+[Desktop Entry]
+Name=LoungeCat
+Comment=Modern IRC Client for Linux
+Exec=/usr/bin/${pkgname}
+Icon=${pkgname}
+Terminal=false
+Type=Application
+Categories=Network;IRCClient;
+MimeType=x-scheme-handler/irc;x-scheme-handler/ircs;
+EOF
+
+    install -d "${pkgdir}/usr/share/pixmaps"
+    install -Dm644 shared/src/commonMain/composeResources/drawable/icon.png "${pkgdir}/usr/share/pixmaps/${pkgname}.png"
 }

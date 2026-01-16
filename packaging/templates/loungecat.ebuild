@@ -3,18 +3,18 @@
 
 EAPI=8
 
-inherit unpacker xdg
+inherit desktop xdg java-pkg-2
 
 DESCRIPTION="Modern IRC Client for Linux"
 HOMEPAGE="https://github.com/binkiewka/LoungeCat-Desktop"
-SRC_URI="https://github.com/binkiewka/LoungeCat-Desktop/releases/download/v${PV}/LoungeCat_${PV}_amd64.deb"
+SRC_URI="https://github.com/binkiewka/LoungeCat-Desktop/archive/v${PV}.tar.gz -> ${P}.tar.gz"
 
 LICENSE="MIT"
 SLOT="0"
 KEYWORDS="~amd64"
 
 RDEPEND="
-    virtual/jre
+    >=virtual/jre-17
     media-libs/alsa-lib
     x11-libs/libX11
     x11-libs/libXext
@@ -22,22 +22,38 @@ RDEPEND="
     x11-libs/libXrender
     x11-libs/libXtst
 "
+DEPEND="
+    >=virtual/jdk-17
+    ${RDEPEND}
+"
 
-S="${WORKDIR}"
+S="${WORKDIR}/LoungeCat-Desktop-${PV}"
 
-src_unpack() {
-    unpack_deb ${A}
+src_prepare() {
+    default
+    # Make gradlew executable
+    chmod +x gradlew || die
+}
+
+src_compile() {
+    export JAVA_HOME=$(java-config -g JAVA_HOME)
+    
+    # Run the distribution task
+    # This downloads dependencies and Gradle if needed
+    ./gradlew :desktopApp:createDistributable --no-daemon --info || die "Gradle build failed"
 }
 
 src_install() {
-    # unpack_deb extracts content to ${S}
-    # We copy binaries and share folders to ${D}
+    local app_dir="/opt/${PN}"
+    dodir "${app_dir}"
     
-    # Typical structure of our deb: /opt/LoungeCat or /usr/bin/LoungeCat
-    # We need to preserve the hierarchy found in the deb.
+    # Copy the built application
+    cp -r desktopApp/build/compose/binaries/main/app/* "${ED}/${app_dir}/" || die "Install failed"
     
-    # Assuming the deb installs to /opt/LoungeCat
-    # We just copy everything from S to D
+    # Create valid launcher symlink
+    dosym "${app_dir}/LoungeCat" /usr/bin/loungecat
     
-    cp -a "${S}"/* "${D}"/ || die
+    # Install icon and desktop file
+    newicon shared/src/commonMain/composeResources/drawable/icon.png loungecat.png
+    make_desktop_entry loungecat "LoungeCat" loungecat "Network;IRCClient;" "MimeType=x-scheme-handler/irc;x-scheme-handler/ircs;"
 }
