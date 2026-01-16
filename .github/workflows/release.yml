@@ -94,6 +94,36 @@ jobs:
           # Move output to a predictable name
           mv *.AppImage LoungeCat-Linux.AppImage
         
+      - name: Generate Arch and Gentoo Packages
+        shell: bash
+        run: |
+            # Extract version from tag (v1.2.3 -> 1.2.3)
+            VERSION="${GITHUB_REF_NAME#v}"
+            echo "Generating packages for version $VERSION"
+            
+            # Find the generated DEB file to calculate hash
+            DEB_FILE=$(find desktopApp/build/compose/binaries -name "*.deb" | head -n 1)
+            if [ -f "$DEB_FILE" ]; then
+                echo "Found DEB: $DEB_FILE"
+                DEB_HASH=$(sha256sum "$DEB_FILE" | awk '{print $1}')
+                echo "DEB Hash: $DEB_HASH"
+            else
+                echo "Error: DEB file not found!"
+                exit 1
+            fi
+            
+            # Generate PKGBUILD
+            cp packaging/templates/PKGBUILD PKGBUILD
+            sed -i "s/\${VERSION}/$VERSION/g" PKGBUILD
+            sed -i "s/\${DEB_HASH}/$DEB_HASH/g" PKGBUILD
+            
+            # Generate Ebuild
+            EBUILD_NAME="loungecat-${VERSION}.ebuild"
+            cp packaging/templates/loungecat.ebuild "$EBUILD_NAME"
+            
+            echo "Packages generated:"
+            ls -l PKGBUILD "$EBUILD_NAME"
+
       - name: Upload Release Assets (Linux)
         uses: softprops/action-gh-release@v1
         with:
@@ -101,6 +131,9 @@ jobs:
             desktopApp/build/compose/binaries/**/*.deb
             desktopApp/build/compose/binaries/**/*.rpm
             LoungeCat-Linux.AppImage
+            PKGBUILD
+            loungecat-*.ebuild
+
           
   build-windows:
     runs-on: windows-latest

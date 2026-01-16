@@ -1,0 +1,25 @@
+# Maintainer: LoungeCat <loungecat@example.com>
+pkgname=loungecat-bin
+pkgver=${VERSION}
+pkgrelease=1
+pkgdesc="Modern IRC Client for Linux"
+arch=('x86_64')
+url="https://github.com/binkiewka/LoungeCat-Desktop"
+license=('MIT')
+depends=('glibc' 'alsa-lib' 'libx11' 'libxext' 'libxi' 'libxrender' 'libxtst' 'freetype2')
+provides=('loungecat')
+conflicts=('loungecat')
+source=("${url}/releases/download/v${pkgver}/LoungeCat_${pkgver}_amd64.deb")
+sha256sums=('${DEB_HASH}')
+
+package() {
+    # The .deb file is extracted by makepkg into $srcdir
+    # It usually contains data.tar.xz (or data.tar.gz)
+    
+    msg2 "Extracting data.tar.xz..."
+    # Note: makepkg automatically extracts the .deb if it recognizes the extension,
+    # putting 'data.tar.xz', 'control.tar.gz', etc in $srcdir.
+    # We then need to extract data.tar.xz to $pkgdir
+    
+    bsdtar -xf "${srcdir}/data.tar.xz" -C "${pkgdir}"
+}
