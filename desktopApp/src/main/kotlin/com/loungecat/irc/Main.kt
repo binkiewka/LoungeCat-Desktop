@@ -10,6 +10,8 @@ import com.loungecat.irc.data.PreferencesManager
 import com.loungecat.irc.data.cache.MessageCache
 import com.loungecat.irc.data.database.DatabaseService
 import com.loungecat.irc.service.DesktopConnectionManager
+import com.loungecat.irc.service.SoundService
+import com.loungecat.irc.service.TextLogService
 import com.loungecat.irc.shared.generated.resources.Res
 import com.loungecat.irc.shared.generated.resources.icon
 import com.loungecat.irc.shared.generated.resources.logo_transparent
@@ -19,6 +21,7 @@ import com.loungecat.irc.ui.theme.ThemeManager
 import com.loungecat.irc.util.Logger
 import com.loungecat.irc.util.PlatformUtils
 import java.awt.SystemTray
+import java.awt.TrayIcon
 import java.io.File
 import javax.imageio.ImageIO
 import kotlinx.coroutines.Dispatchers
@@ -27,16 +30,31 @@ import org.jetbrains.compose.resources.painterResource
 
 fun main() = application {
     // Initialize services
-    val appDataDir = File(PlatformUtils.getAppDataDirectory())
-    appDataDir.mkdirs()
+    val appDataDir = File(System.getProperty("user.home"), ".loungecat")
+    if (!appDataDir.exists()) {
+        appDataDir.mkdirs()
+    }
 
     DatabaseService.initialize()
+    TextLogService.initialize(appDataDir)
     PreferencesManager.initialize(File(PlatformUtils.getConfigPath()))
     ThemeManager.initialize(PlatformUtils.getAppDataDirectory())
     MessageCache.initialize(appDataDir)
 
-    // Load initial preferences
+    // Load initial permissions
     val initialPrefs = PreferencesManager.getPreferences()
+
+    // Initialize SoundService
+    SoundService.initialize(
+            soundEnabled = initialPrefs.soundAlertsEnabled,
+            soundVolume = initialPrefs.soundVolume
+    )
+    SoundService.setSoundEnabled(SoundService.SoundType.MENTION, initialPrefs.soundOnMention)
+    SoundService.setSoundEnabled(SoundService.SoundType.HIGHLIGHT, initialPrefs.soundOnHighlight)
+    SoundService.setSoundEnabled(
+            SoundService.SoundType.PRIVATE_MESSAGE,
+            initialPrefs.soundOnPrivateMessage
+    )
 
     val connectionManager = remember {
         DesktopConnectionManager().apply {
@@ -46,14 +64,18 @@ fun main() = application {
             messageCacheLoader = { serverId, channelName ->
                 MessageCache.loadMessages(serverId, channelName)
             }
-            messageCacheSaver = { serverId, channelName, messages ->
-                MessageCache.saveMessages(serverId, channelName, messages)
+            messageCacheSaver = { serverId, channelName, messages, topic ->
+                MessageCache.saveMessages(serverId, channelName, messages, topic)
             }
             messageCachePaginatedLoader = { serverId, channelName, offset, limit ->
                 MessageCache.loadMessages(serverId, channelName, offset, limit)
             }
             messageCacheCountLoader = { serverId, channelName ->
                 MessageCache.getMessageCount(serverId, channelName)
+            }
+            topicLoader = { serverId, channelName -> MessageCache.getTopic(serverId, channelName) }
+            textLogger = { serverId, serverName, channelName, message ->
+                TextLogService.logFromMessage(serverId, serverName, channelName, message)
             }
 
             // Set up preferences updater callback
@@ -76,7 +98,7 @@ fun main() = application {
 
     val windowState =
             rememberWindowState(
-                    size = DpSize(1400.dp, 900.dp),
+                    size = DpSize(1280.dp, 800.dp),
                     position = WindowPosition.Aligned(Alignment.Center),
                     placement =
                             if (System.getenv("HEADLESS") == "true") WindowPlacement.Maximized
@@ -153,12 +175,21 @@ fun main() = application {
 
                                     val classLoader = Thread.currentThread().contextClassLoader
                                     val iconStream =
-                                            classLoader.getResourceAsStream("logo.png")
+                                            classLoader.getResourceAsStream("tray_icon.png")
                                                     ?: classLoader.getResourceAsStream(
-                                                            "composeResources/com.loungecat.irc.shared.generated.resources/drawable/logo.png"
+                                                            "composeResources/com.loungecat.irc.shared.generated.resources/drawable/tray_icon.png"
                                                     )
                                                             ?: classLoader.getResourceAsStream(
-                                                            "drawable/logo.png"
+                                                            "icon.png"
+                                                    )
+                                                            ?: classLoader.getResourceAsStream(
+                                                            "composeResources/com.loungecat.irc.shared.generated.resources/drawable/icon.png"
+                                                    )
+                                                            ?: classLoader.getResourceAsStream(
+                                                            "logo.png"
+                                                    )
+                                                            ?: classLoader.getResourceAsStream(
+                                                            "composeResources/com.loungecat.irc.shared.generated.resources/drawable/logo.png"
                                                     )
                                                             ?: classLoader.getResourceAsStream(
                                                             "composeResources/com.loungecat.irc.shared.generated.resources/drawable/logo_transparent.png"
@@ -257,6 +288,28 @@ fun main() = application {
 
     val notificationService = remember { DesktopNotificationService(trayState) }
 
+    // Listen for events to trigger sounds and notifications
+    LaunchedEffect(connectionManager) {
+        launch {
+            connectionManager.mentionEvents.collect { (channel, sender, message) ->
+                SoundService.play(SoundService.SoundType.MENTION)
+                notificationService.showMentionNotification(channel, sender, message)
+            }
+        }
+        launch {
+            connectionManager.highlightEvents.collect { (channel, sender, message) ->
+                SoundService.play(SoundService.SoundType.HIGHLIGHT)
+                notificationService.showMentionNotification(channel, sender, message)
+            }
+        }
+        launch {
+            connectionManager.pmEvents.collect { (sender, message) ->
+                SoundService.play(SoundService.SoundType.PRIVATE_MESSAGE)
+                notificationService.showPrivateMessageNotification(sender, message)
+            }
+        }
+    }
+
     // Standard Tray Fallback
     // Show if NOT Linux. On Linux, user prefers wait over black box AWT.
     // We use manual AWT SystemTray here to ensure we can resize the image properly
@@ -270,14 +323,24 @@ fun main() = application {
             val tray = SystemTray.getSystemTray()
             var trayIcon: java.awt.TrayIcon? = null
 
+            // Pass the manual tray icon to notification service if available
+            notificationService.setManualTray(tray, null)
+
             try {
                 val classLoader = Thread.currentThread().contextClassLoader
                 val iconStream =
-                        classLoader.getResourceAsStream("logo.png")
+                        classLoader.getResourceAsStream("tray_icon.png")
                                 ?: classLoader.getResourceAsStream(
+                                        "composeResources/com.loungecat.irc.shared.generated.resources/drawable/tray_icon.png"
+                                )
+                                        ?: classLoader.getResourceAsStream("icon.png")
+                                        ?: classLoader.getResourceAsStream(
+                                        "composeResources/com.loungecat.irc.shared.generated.resources/drawable/icon.png"
+                                )
+                                        ?: classLoader.getResourceAsStream("logo.png")
+                                        ?: classLoader.getResourceAsStream(
                                         "composeResources/com.loungecat.irc.shared.generated.resources/drawable/logo.png"
                                 )
-                                        ?: classLoader.getResourceAsStream("drawable/logo.png")
                                         ?: classLoader.getResourceAsStream(
                                         "composeResources/com.loungecat.irc.shared.generated.resources/drawable/logo_transparent.png"
                                 )
@@ -320,6 +383,7 @@ fun main() = application {
                     trayIcon.isImageAutoSize = false
 
                     tray.add(trayIcon)
+                    notificationService.setManualTray(tray, trayIcon)
                     Logger.d("Main", "LoungeCat - Manual AWT Tray added successfully (Transparent)")
                 }
             } catch (e: Exception) {
@@ -338,6 +402,21 @@ fun main() = application {
     val userPreferences by connectionManager.userPreferences.collectAsState()
     val themeColors =
             remember(userPreferences.theme) { ThemeManager.getTheme(userPreferences.theme) }
+
+    // Update SoundService when preferences change
+    LaunchedEffect(userPreferences) {
+        SoundService.setEnabled(userPreferences.soundAlertsEnabled)
+        SoundService.setVolume(userPreferences.soundVolume)
+        SoundService.setSoundEnabled(SoundService.SoundType.MENTION, userPreferences.soundOnMention)
+        SoundService.setSoundEnabled(
+                SoundService.SoundType.HIGHLIGHT,
+                userPreferences.soundOnHighlight
+        )
+        SoundService.setSoundEnabled(
+                SoundService.SoundType.PRIVATE_MESSAGE,
+                userPreferences.soundOnPrivateMessage
+        )
+    }
 
     Window(
             onCloseRequest = {
@@ -365,7 +444,7 @@ fun main() = application {
             },
             visible = isVisible,
             state = windowState,
-            title = "LoungeCat IRC",
+            title = "LoungeCat IRC v${com.loungecat.irc.BuildConfig.VERSION}",
             icon = painterResource(Res.drawable.logo_transparent),
             onKeyEvent = { keyEvent ->
                 when {
@@ -387,6 +466,14 @@ fun main() = application {
                 }
             }
     ) {
+        val window = this.window
+        DisposableEffect(Unit) {
+            if (System.getProperty("os.name").contains("Windows")) {
+                window.rootPane.putClientProperty("jetbrains.awt.windowDarkAppearance", true)
+            }
+            onDispose {}
+        }
+
         LoungeCatTheme(themeColors = themeColors) {
             DesktopMainScreen(connectionManager = connectionManager)
         }
@@ -397,6 +484,14 @@ fun main() = application {
 private val isLinux = System.getProperty("os.name").lowercase().contains("linux")
 
 class DesktopNotificationService(private val trayState: TrayState) {
+    private var manualTray: java.awt.SystemTray? = null
+    private var manualTrayIcon: java.awt.TrayIcon? = null
+
+    fun setManualTray(tray: java.awt.SystemTray, icon: java.awt.TrayIcon?) {
+        this.manualTray = tray
+        this.manualTrayIcon = icon
+    }
+
     private val hasNotifySend: Boolean by lazy {
         try {
             if (isLinux) {
@@ -415,9 +510,32 @@ class DesktopNotificationService(private val trayState: TrayState) {
         if (hasNotifySend) {
             sendNativeNotification(title, message)
         } else {
-            trayState.sendNotification(
-                    Notification(title = title, message = message, type = Notification.Type.Info)
-            )
+            // First try manual AWT tray (Windows/Mac preferred fallback)
+            val icon = manualTrayIcon
+            if (icon != null) {
+                try {
+                    icon.displayMessage(title, message, java.awt.TrayIcon.MessageType.INFO)
+                } catch (e: Exception) {
+                    Logger.e("Main", "Failed to send manual tray notification", e)
+                    // Fallback to Compose Tray
+                    trayState.sendNotification(
+                            Notification(
+                                    title = title,
+                                    message = message,
+                                    type = Notification.Type.Info
+                            )
+                    )
+                }
+            } else {
+                // Final fallback to Compose Tray
+                trayState.sendNotification(
+                        Notification(
+                                title = title,
+                                message = message,
+                                type = Notification.Type.Info
+                        )
+                )
+            }
         }
     }
 
@@ -449,9 +567,7 @@ class DesktopNotificationService(private val trayState: TrayState) {
         } catch (e: Exception) {
             e.printStackTrace()
             // Fallback
-            trayState.sendNotification(
-                    Notification(title = title, message = message, type = Notification.Type.Info)
-            )
+            sendNotification(title, message)
         }
     }
 }

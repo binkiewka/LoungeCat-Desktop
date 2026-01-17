@@ -210,23 +210,36 @@ fun ChatGrid(
                 Box(modifier = Modifier.weight(1f)) {
                         when (activeChannels.size) {
                                 1 -> {
-                                        GridPane(0)
+                                        val (serverId, channelName) = activeChannels[0]
+                                        key(serverId, channelName) { GridPane(0) }
                                 }
                                 2 -> {
                                         if (layoutOrientation == SplitLayoutOrientation.HORIZONTAL
                                         ) {
                                                 // Side by side
                                                 Row(modifier = Modifier.fillMaxSize()) {
-                                                        GridPane(0, Modifier.weight(1f))
+                                                        val (s1, c1) = activeChannels[0]
+                                                        key(s1, c1) {
+                                                                GridPane(0, Modifier.weight(1f))
+                                                        }
                                                         VerticalDivider()
-                                                        GridPane(1, Modifier.weight(1f))
+                                                        val (s2, c2) = activeChannels[1]
+                                                        key(s2, c2) {
+                                                                GridPane(1, Modifier.weight(1f))
+                                                        }
                                                 }
                                         } else {
                                                 // Stacked (top/bottom)
                                                 Column(modifier = Modifier.fillMaxSize()) {
-                                                        GridPane(0, Modifier.weight(1f))
+                                                        val (s1, c1) = activeChannels[0]
+                                                        key(s1, c1) {
+                                                                GridPane(0, Modifier.weight(1f))
+                                                        }
                                                         HorizontalDivider()
-                                                        GridPane(1, Modifier.weight(1f))
+                                                        val (s2, c2) = activeChannels[1]
+                                                        key(s2, c2) {
+                                                                GridPane(1, Modifier.weight(1f))
+                                                        }
                                                 }
                                         }
                                 }
@@ -234,25 +247,34 @@ fun ChatGrid(
                                         // 3 items: 2 on top, 1 on bottom (with drag support)
                                         Column(modifier = Modifier.fillMaxSize()) {
                                                 Row(modifier = Modifier.weight(1f)) {
-                                                        GridPane(
-                                                                0,
-                                                                Modifier.weight(1f),
-                                                                enableDrag = true
-                                                        )
+                                                        val (s1, c1) = activeChannels[0]
+                                                        key(s1, c1) {
+                                                                GridPane(
+                                                                        0,
+                                                                        Modifier.weight(1f),
+                                                                        enableDrag = true
+                                                                )
+                                                        }
                                                         VerticalDivider()
-                                                        GridPane(
-                                                                1,
-                                                                Modifier.weight(1f),
-                                                                enableDrag = true
-                                                        )
+                                                        val (s2, c2) = activeChannels[1]
+                                                        key(s2, c2) {
+                                                                GridPane(
+                                                                        1,
+                                                                        Modifier.weight(1f),
+                                                                        enableDrag = true
+                                                                )
+                                                        }
                                                 }
                                                 HorizontalDivider()
                                                 Row(modifier = Modifier.weight(1f)) {
-                                                        GridPane(
-                                                                2,
-                                                                Modifier.weight(1f),
-                                                                enableDrag = true
-                                                        )
+                                                        val (s3, c3) = activeChannels[2]
+                                                        key(s3, c3) {
+                                                                GridPane(
+                                                                        2,
+                                                                        Modifier.weight(1f),
+                                                                        enableDrag = true
+                                                                )
+                                                        }
                                                 }
                                         }
                                 }
@@ -260,31 +282,43 @@ fun ChatGrid(
                                         // 4 items: 2x2 (with drag support)
                                         Column(modifier = Modifier.fillMaxSize()) {
                                                 Row(modifier = Modifier.weight(1f)) {
-                                                        GridPane(
-                                                                0,
-                                                                Modifier.weight(1f),
-                                                                enableDrag = true
-                                                        )
+                                                        val (s1, c1) = activeChannels[0]
+                                                        key(s1, c1) {
+                                                                GridPane(
+                                                                        0,
+                                                                        Modifier.weight(1f),
+                                                                        enableDrag = true
+                                                                )
+                                                        }
                                                         VerticalDivider()
-                                                        GridPane(
-                                                                1,
-                                                                Modifier.weight(1f),
-                                                                enableDrag = true
-                                                        )
+                                                        val (s2, c2) = activeChannels[1]
+                                                        key(s2, c2) {
+                                                                GridPane(
+                                                                        1,
+                                                                        Modifier.weight(1f),
+                                                                        enableDrag = true
+                                                                )
+                                                        }
                                                 }
                                                 HorizontalDivider()
                                                 Row(modifier = Modifier.weight(1f)) {
-                                                        GridPane(
-                                                                2,
-                                                                Modifier.weight(1f),
-                                                                enableDrag = true
-                                                        )
+                                                        val (s3, c3) = activeChannels[2]
+                                                        key(s3, c3) {
+                                                                GridPane(
+                                                                        2,
+                                                                        Modifier.weight(1f),
+                                                                        enableDrag = true
+                                                                )
+                                                        }
                                                         VerticalDivider()
-                                                        GridPane(
-                                                                3,
-                                                                Modifier.weight(1f),
-                                                                enableDrag = true
-                                                        )
+                                                        val (s4, c4) = activeChannels[3]
+                                                        key(s4, c4) {
+                                                                GridPane(
+                                                                        3,
+                                                                        Modifier.weight(1f),
+                                                                        enableDrag = true
+                                                                )
+                                                        }
                                                 }
                                         }
                                 }

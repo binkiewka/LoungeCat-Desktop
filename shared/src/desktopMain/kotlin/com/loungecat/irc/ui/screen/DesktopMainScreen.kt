@@ -35,6 +35,7 @@ import androidx.compose.ui.zIndex
 import com.loungecat.irc.data.model.*
 import com.loungecat.irc.data.model.ChannelUser
 import com.loungecat.irc.service.DesktopConnectionManager
+import com.loungecat.irc.ui.components.AppTooltip
 import com.loungecat.irc.ui.components.ChannelPane
 import com.loungecat.irc.ui.components.ChatGrid
 import com.loungecat.irc.ui.components.CustomVerticalScrollbar
@@ -64,7 +65,7 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
     val messages by connectionManager.messages.collectAsState()
     val urlPreviews by connectionManager.urlPreviews.collectAsState()
     val imageUrls by connectionManager.imageUrls.collectAsState()
-    val showJoinPartMessages by connectionManager.showJoinPartMessages.collectAsState()
+    val showJoinPartMessages by connectionManager.joinPartQuitMode.collectAsState()
     val userPreferences by connectionManager.userPreferences.collectAsState()
 
     var showAddServerDialog by remember { mutableStateOf(false) }
@@ -90,6 +91,58 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
 
     LaunchedEffect(userPreferences.spellCheckLanguage) {
         com.loungecat.irc.util.SpellChecker.initialize(userPreferences.spellCheckLanguage)
+    }
+
+    // Sync split view state: Remove channels that are no longer joined
+    LaunchedEffect(channels) {
+        if (splitViewState.isEnabled) {
+            val validChannels = channels.map { it.name }.toSet()
+            // We need to check across all servers, but channels is just for current server?
+            // Wait, connectionManager.channels is for CURRENT server.
+            // Split view can theoretically have channels from different servers if we supported it
+            // fully,
+            // but currently the UI focuses on one server at a time for the sidebar list.
+            // However, split view MIGHT hold channels from other servers if we switch servers?
+            // Actually ServerItem click switches server.
+
+            // Let's safe-guard by checking if the channel is valid for the server it belongs to.
+            // But we don't have easy access to ALL channels of ALL servers here efficiently without
+            // observing all.
+            //
+            // Simplified approach: If the channel belongs to the CURRENT server and is NOT in
+            // `channels`, remove it.
+            // If it belongs to another server, we skip checking (or we'd need to observe all
+            // servers).
+
+            // Per DesktopConnectionManager structure, we have access to `connections`.
+            // But strict state observation suggests we should trust the reactive flows.
+
+            // For now, let's implement for CURRENT server channels, as that's the primary use case
+            // for "parting".
+
+            val currentSrvId = currentServerId
+            if (currentSrvId != null) {
+                // We must use a copy to avoid concurrent modification if we remove items
+                val activeList = splitViewState.activeChannels.toList()
+
+                activeList.forEachIndexed { index, (srvId, chName) ->
+                    if (srvId == currentSrvId) {
+                        if (!validChannels.contains(chName)) {
+                            // Channel is no longer in the list for this server -> Close it
+                            // We need to find the CURRENT index in the live list, as it might have
+                            // shifted
+                            val currentIndex =
+                                    splitViewState.activeChannels.indexOfFirst {
+                                        it.first == srvId && it.second == chName
+                                    }
+                            if (currentIndex != -1) {
+                                splitViewState.closeChannel(currentIndex)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Removed currentMessages as it is now handled in ChatPanel
@@ -122,60 +175,68 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                             fontWeight = FontWeight.Bold
                     )
                     Row {
-                        IconButton(
-                                onClick = {
-                                    connectionManager.setSplitViewEnabled(
-                                            !userPreferences.splitViewEnabled
-                                    )
-                                },
-                                modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                    imageVector =
-                                            if (userPreferences.splitViewEnabled)
-                                                    Icons.Default.VerticalSplit
-                                            else Icons.Default.CropPortrait,
-                                    contentDescription = "Toggle Split View",
-                                    tint =
-                                            if (userPreferences.splitViewEnabled) colors.cyan
-                                            else colors.comment,
-                                    modifier = Modifier.size(18.dp)
-                            )
+                        AppTooltip(text = "Toggle Split View") {
+                            IconButton(
+                                    onClick = {
+                                        connectionManager.setSplitViewEnabled(
+                                                !userPreferences.splitViewEnabled
+                                        )
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                        imageVector =
+                                                if (userPreferences.splitViewEnabled)
+                                                        Icons.Default.VerticalSplit
+                                                else Icons.Default.CropPortrait,
+                                        contentDescription = "Toggle Split View",
+                                        tint =
+                                                if (userPreferences.splitViewEnabled) colors.cyan
+                                                else colors.comment,
+                                        modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
-                        IconButton(
-                                onClick = { showSettingsDialog = true },
-                                modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                    imageVector = Icons.Default.Settings,
-                                    contentDescription = "Settings",
-                                    tint = colors.comment,
-                                    modifier = Modifier.size(18.dp)
-                            )
+                        AppTooltip(text = "Settings") {
+                            IconButton(
+                                    onClick = { showSettingsDialog = true },
+                                    modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                        imageVector = Icons.Default.Settings,
+                                        contentDescription = "Settings",
+                                        tint = colors.comment,
+                                        modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
-                        IconButton(
-                                onClick = { isSidebarVisible = false },
-                                modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                                    contentDescription = "Collapse Sidebar",
-                                    tint = colors.comment,
-                                    modifier = Modifier.size(18.dp)
-                            )
+                        AppTooltip(text = "Collapse Sidebar") {
+                            IconButton(
+                                    onClick = { isSidebarVisible = false },
+                                    modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                        contentDescription = "Collapse Sidebar",
+                                        tint = colors.comment,
+                                        modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
                         // Moved "Add Server" to end or maybe just keep it separate?
                         // Let's keep it here but compact.
-                        IconButton(
-                                onClick = { showAddServerDialog = true },
-                                modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = "Add Server",
-                                    tint = colors.green,
-                                    modifier = Modifier.size(18.dp)
-                            )
+                        AppTooltip(text = "Add Server") {
+                            IconButton(
+                                    onClick = { showAddServerDialog = true },
+                                    modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "Add Server",
+                                        tint = colors.green,
+                                        modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -338,16 +399,18 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Top
                 ) {
-                    IconButton(
-                            onClick = { isSidebarVisible = true },
-                            modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = "Expand Sidebar",
-                                tint = colors.cyan,
-                                modifier = Modifier.size(24.dp)
-                        )
+                    AppTooltip(text = "Expand Sidebar") {
+                        IconButton(
+                                onClick = { isSidebarVisible = true },
+                                modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = "Expand Sidebar",
+                                    tint = colors.cyan,
+                                    modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -496,7 +559,8 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                 onTimestampFormatChange = { connectionManager.setTimestampFormat(it) },
                 onUrlImageDisplayModeChange = { connectionManager.setUrlImageDisplayMode(it) },
                 onColoredNicknamesChange = { connectionManager.setColoredNicknames(it) },
-                onShowJoinPartMessagesChange = { connectionManager.setShowJoinPartMessages(it) },
+                onJoinPartQuitModeChange = { connectionManager.setJoinPartQuitMode(it) },
+                onSmartHideMinutesChange = { connectionManager.setSmartHideMinutes(it) },
                 onSplitViewEnabledChange = { connectionManager.setSplitViewEnabled(it) },
                 onSpellCheckEnabledChange = { connectionManager.setSpellCheckEnabled(it) },
                 onSpellCheckLanguageChange = { connectionManager.setSpellCheckLanguage(it) },
@@ -508,6 +572,8 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                 onSoundOnPrivateMessageChange = { connectionManager.setSoundOnPrivateMessage(it) },
                 onSoundOnHighlightChange = { /* TODO: Implement highlighting sound toggle if needed */
                 },
+                onLoggingEnabledChange = { connectionManager.setLoggingEnabled(it) },
+                onHistoryReplayLinesChange = { connectionManager.setHistoryReplayLines(it) },
                 onDismiss = { showSettingsDialog = false }
         )
     }
@@ -635,13 +701,15 @@ private fun ChannelListItem(
                 Spacer(modifier = Modifier.width(4.dp))
             }
             if (onClose != null && channel.type != ChannelType.SERVER) {
-                IconButton(onClick = onClose, modifier = Modifier.size(18.dp)) {
-                    Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Leave Channel",
-                            tint = colors.comment,
-                            modifier = Modifier.size(12.dp)
-                    )
+                AppTooltip(text = "Leave Channel") {
+                    IconButton(onClick = onClose, modifier = Modifier.size(18.dp)) {
+                        Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Leave Channel",
+                                tint = colors.comment,
+                                modifier = Modifier.size(12.dp)
+                        )
+                    }
                 }
             }
         }
@@ -779,22 +847,26 @@ private fun ServerItem(
 
                 Row {
                     if (server.isConnected) {
-                        IconButton(onClick = onDisconnect, modifier = Modifier.size(24.dp)) {
-                            Icon(
-                                    imageVector = Icons.Default.PowerSettingsNew,
-                                    contentDescription = "Disconnect",
-                                    tint = colors.red,
-                                    modifier = Modifier.size(16.dp)
-                            )
+                        AppTooltip(text = "Disconnect") {
+                            IconButton(onClick = onDisconnect, modifier = Modifier.size(24.dp)) {
+                                Icon(
+                                        imageVector = Icons.Default.PowerSettingsNew,
+                                        contentDescription = "Disconnect",
+                                        tint = colors.red,
+                                        modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     } else {
-                        IconButton(onClick = onConnect, modifier = Modifier.size(24.dp)) {
-                            Icon(
-                                    imageVector = Icons.Default.PlayArrow,
-                                    contentDescription = "Connect",
-                                    tint = colors.green,
-                                    modifier = Modifier.size(16.dp)
-                            )
+                        AppTooltip(text = "Connect") {
+                            IconButton(onClick = onConnect, modifier = Modifier.size(24.dp)) {
+                                Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "Connect",
+                                        tint = colors.green,
+                                        modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -1361,7 +1433,8 @@ private fun SettingsDialog(
         onTimestampFormatChange: (TimestampFormat) -> Unit,
         onUrlImageDisplayModeChange: (UrlImageDisplayMode) -> Unit,
         onColoredNicknamesChange: (Boolean) -> Unit,
-        onShowJoinPartMessagesChange: (Boolean) -> Unit,
+        onJoinPartQuitModeChange: (JoinPartQuitDisplayMode) -> Unit,
+        onSmartHideMinutesChange: (Int) -> Unit,
         onSplitViewEnabledChange: (Boolean) -> Unit,
         onSpellCheckEnabledChange: (Boolean) -> Unit,
         onSpellCheckLanguageChange: (String) -> Unit,
@@ -1372,6 +1445,8 @@ private fun SettingsDialog(
         onSoundOnMentionChange: (Boolean) -> Unit,
         onSoundOnPrivateMessageChange: (Boolean) -> Unit,
         onSoundOnHighlightChange: (Boolean) -> Unit, // Added missing param
+        onLoggingEnabledChange: (Boolean) -> Unit,
+        onHistoryReplayLinesChange: (Int) -> Unit,
         onDismiss: () -> Unit
 ) {
     val colors = AppColors.current
@@ -1675,30 +1750,172 @@ private fun SettingsDialog(
                             )
                         }
 
-                        // Show Join/Part Messages
+                        // Join/Part/Quit Display Mode
                         Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text("Show Join/Part Messages", color = colors.foreground)
+                                Text("Join/Part/Quit Messages", color = colors.foreground)
                                 Text(
-                                        "Display when users join or leave",
+                                        "How to display user join/leave events",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = colors.comment
                                 )
                             }
-                            Switch(
-                                    checked = userPreferences.showJoinPartMessages,
-                                    onCheckedChange = onShowJoinPartMessagesChange,
-                                    colors =
-                                            SwitchDefaults.colors(
-                                                    checkedThumbColor = colors.green,
-                                                    checkedTrackColor =
-                                                            colors.green.copy(alpha = 0.5f)
+                            Box {
+                                var jpqExpanded by remember { mutableStateOf(false) }
+                                val displayName =
+                                        when (userPreferences.joinPartQuitMode) {
+                                            JoinPartQuitDisplayMode.SHOW_ALL -> "Show All"
+                                            JoinPartQuitDisplayMode.HIDE_ALL -> "Hide All"
+                                            JoinPartQuitDisplayMode.GROUPED -> "Group Together"
+                                            JoinPartQuitDisplayMode.SMART_HIDE -> "Smart Hide"
+                                        }
+                                TextButton(onClick = { jpqExpanded = true }) {
+                                    Text(displayName, color = colors.cyan)
+                                    Icon(Icons.Default.ArrowDropDown, null, tint = colors.cyan)
+                                }
+                                DropdownMenu(
+                                        expanded = jpqExpanded,
+                                        onDismissRequest = { jpqExpanded = false },
+                                        containerColor = colors.windowBackground
+                                ) {
+                                    DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text("Show All", color = colors.foreground)
+                                                    Text(
+                                                            "Show all join/part/quit messages",
+                                                            style =
+                                                                    MaterialTheme.typography
+                                                                            .bodySmall,
+                                                            color = colors.comment
+                                                    )
+                                                }
+                                            },
+                                            onClick = {
+                                                onJoinPartQuitModeChange(
+                                                        JoinPartQuitDisplayMode.SHOW_ALL
+                                                )
+                                                jpqExpanded = false
+                                            }
+                                    )
+                                    DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text("Hide All", color = colors.foreground)
+                                                    Text(
+                                                            "Hide all join/part/quit messages",
+                                                            style =
+                                                                    MaterialTheme.typography
+                                                                            .bodySmall,
+                                                            color = colors.comment
+                                                    )
+                                                }
+                                            },
+                                            onClick = {
+                                                onJoinPartQuitModeChange(
+                                                        JoinPartQuitDisplayMode.HIDE_ALL
+                                                )
+                                                jpqExpanded = false
+                                            }
+                                    )
+                                    DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text(
+                                                            "Group Together",
+                                                            color = colors.foreground
+                                                    )
+                                                    Text(
+                                                            "Collapse consecutive events",
+                                                            style =
+                                                                    MaterialTheme.typography
+                                                                            .bodySmall,
+                                                            color = colors.comment
+                                                    )
+                                                }
+                                            },
+                                            onClick = {
+                                                onJoinPartQuitModeChange(
+                                                        JoinPartQuitDisplayMode.GROUPED
+                                                )
+                                                jpqExpanded = false
+                                            }
+                                    )
+                                    DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Text("Smart Hide", color = colors.foreground)
+                                                    Text(
+                                                            "Only show for active users",
+                                                            style =
+                                                                    MaterialTheme.typography
+                                                                            .bodySmall,
+                                                            color = colors.comment
+                                                    )
+                                                }
+                                            },
+                                            onClick = {
+                                                onJoinPartQuitModeChange(
+                                                        JoinPartQuitDisplayMode.SMART_HIDE
+                                                )
+                                                jpqExpanded = false
+                                            }
+                                    )
+                                }
+                            }
+                        }
+
+                        // Smart Hide Duration (only shown when Smart Hide mode is active)
+                        if (userPreferences.joinPartQuitMode == JoinPartQuitDisplayMode.SMART_HIDE
+                        ) {
+                            Row(
+                                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text("Activity Threshold", color = colors.foreground)
+                                    Text(
+                                            "Only show for users who spoke recently",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colors.comment
+                                    )
+                                }
+                                Box {
+                                    var smartHideExpanded by remember { mutableStateOf(false) }
+                                    TextButton(onClick = { smartHideExpanded = true }) {
+                                        Text(
+                                                "${userPreferences.smartHideMinutes} min",
+                                                color = colors.cyan
+                                        )
+                                        Icon(Icons.Default.ArrowDropDown, null, tint = colors.cyan)
+                                    }
+                                    DropdownMenu(
+                                            expanded = smartHideExpanded,
+                                            onDismissRequest = { smartHideExpanded = false },
+                                            containerColor = colors.windowBackground
+                                    ) {
+                                        listOf(5, 10, 15, 30, 60).forEach { minutes ->
+                                            DropdownMenuItem(
+                                                    text = {
+                                                        Text(
+                                                                "$minutes minutes",
+                                                                color = colors.foreground
+                                                        )
+                                                    },
+                                                    onClick = {
+                                                        onSmartHideMinutesChange(minutes)
+                                                        smartHideExpanded = false
+                                                    }
                                             )
-                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         // Spell Checking
@@ -1833,6 +2050,87 @@ private fun SettingsDialog(
                                 }
                             }
                         }
+
+                        HorizontalDivider(color = colors.border)
+
+                        Text(
+                                text = "Logging & History",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = colors.cyan,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 8.dp)
+                        )
+
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("Enable Text Logging", color = colors.foreground)
+                                Text(
+                                        "Save chat logs to disk",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colors.comment
+                                )
+                            }
+                            Switch(
+                                    checked = userPreferences.loggingEnabled,
+                                    onCheckedChange = onLoggingEnabledChange,
+                                    colors =
+                                            SwitchDefaults.colors(
+                                                    checkedThumbColor = colors.windowBackground,
+                                                    checkedTrackColor = colors.green,
+                                                    uncheckedThumbColor = colors.comment,
+                                                    uncheckedTrackColor = colors.background
+                                            )
+                            )
+                        }
+
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("History Replay Lines", color = colors.foreground)
+                                Text(
+                                        "Messages to load on join",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colors.comment
+                                )
+                            }
+                            // Using a box with dropdown for strict values or text field?
+                            // Text field is better for custom number, but Slider is safer.
+                            // Let's use a Box with basic selection for now or a simple
+                            // OutlinedTextField if available.
+                            // Given the context, I'll use a simple dropdown for common values to
+                            // match other UI patterns here if easy, or just a Slider.
+                            // A Slider 0..1000 seems reasonable.
+
+                            Box(
+                                    contentAlignment = Alignment.CenterEnd,
+                                    modifier = Modifier.width(150.dp)
+                            ) {
+                                Text(
+                                        "${userPreferences.historyReplayLines} lines",
+                                        color = colors.cyan
+                                )
+                            }
+                        }
+
+                        Slider(
+                                value = userPreferences.historyReplayLines.toFloat(),
+                                onValueChange = { onHistoryReplayLinesChange(it.toInt()) },
+                                valueRange = 0f..2000f,
+                                steps = 19, // 100 increments roughly
+                                colors =
+                                        SliderDefaults.colors(
+                                                thumbColor = colors.cyan,
+                                                activeTrackColor = colors.cyan,
+                                                inactiveTrackColor = colors.background
+                                        )
+                        )
                     }
                     CustomVerticalScrollbar(
                             scrollState = scrollState,

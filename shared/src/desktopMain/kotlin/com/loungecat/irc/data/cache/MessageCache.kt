@@ -93,20 +93,42 @@ object MessageCache {
         }
     }
 
-    fun saveMessages(serverId: Long, channelName: String, messages: List<IncomingMessage>) {
+    fun getTopic(serverId: Long, channelName: String): String? {
+        return try {
+            val file = getCacheFile(serverId, channelName)
+            if (file?.exists() == true) {
+                val content = file.readText()
+                val cached = json.decodeFromString<CachedChannel>(content)
+                cached.topic
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Logger.e("MessageCache", "Failed to get topic for $channelName", e)
+            null
+        }
+    }
+
+    fun saveMessages(
+            serverId: Long,
+            channelName: String,
+            messages: List<IncomingMessage>,
+            topic: String? = null
+    ) {
         // Cancel previous save job to debounce
         saveJob?.cancel()
         saveJob =
                 cacheScope.launch {
                     delay(SAVE_DEBOUNCE_MS)
-                    saveMessagesSync(serverId, channelName, messages)
+                    saveMessagesSync(serverId, channelName, messages, topic)
                 }
     }
 
     private fun saveMessagesSync(
             serverId: Long,
             channelName: String,
-            messages: List<IncomingMessage>
+            messages: List<IncomingMessage>,
+            topic: String?
     ) {
         try {
             val file = getCacheFile(serverId, channelName)
@@ -121,10 +143,24 @@ object MessageCache {
                             messages
                         }
 
+                // If topic is null, try to preserve existing topic if file exists
+                val finalTopic =
+                        topic
+                                ?: if (it.exists()) {
+                                    try {
+                                        val existing =
+                                                json.decodeFromString<CachedChannel>(it.readText())
+                                        existing.topic
+                                    } catch (e: Exception) {
+                                        null
+                                    }
+                                } else null
+
                 val cached =
                         CachedChannel(
                                 serverId = serverId,
                                 channelName = channelName,
+                                topic = finalTopic,
                                 messages =
                                         limitedMessages.map { msg ->
                                             CachedMessage.fromIncomingMessage(msg)
@@ -133,7 +169,10 @@ object MessageCache {
 
                 val content = json.encodeToString(cached)
                 it.writeText(content)
-                Logger.d("MessageCache", "Saved ${limitedMessages.size} messages for $channelName")
+                Logger.d(
+                        "MessageCache",
+                        "Saved ${limitedMessages.size} messages for $channelName (topic: $finalTopic)"
+                )
             }
         } catch (e: Exception) {
             Logger.e("MessageCache", "Failed to save messages for $channelName", e)

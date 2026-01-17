@@ -14,6 +14,10 @@ class TabCompletionHelper {
     private var wordStart = 0
     private var wordEnd = 0
 
+    // State for proper cycling
+    private var baseInput = ""
+    private var isAtMessageStart = false
+
     companion object {
         // All available IRC commands for completion
         val COMMANDS =
@@ -83,19 +87,25 @@ class TabCompletionHelper {
      * @param cursorPosition Cursor position in input
      * @param channelUsers Users in current channel
      * @param channelNames Available channel names
+     * @param isAtStart Whether the cursor is at the start of the message (affects formatting)
      * @return true if candidates were found
      */
     fun initCompletion(
             input: String,
             cursorPosition: Int,
             channelUsers: List<ChannelUser>,
-            channelNames: List<String>
+            channelNames: List<String>,
+            isAtStart: Boolean = false
     ): Boolean {
         // Find word boundaries at cursor
         wordStart = findWordStart(input, cursorPosition)
         wordEnd = findWordEnd(input, cursorPosition)
         currentPrefix = input.substring(wordStart, cursorPosition).lowercase()
         currentCursorPosition = cursorPosition
+
+        // Store state for cycling
+        baseInput = input
+        isAtMessageStart = isAtStart
 
         if (currentPrefix.isEmpty()) {
             reset()
@@ -127,29 +137,27 @@ class TabCompletionHelper {
 
     /**
      * Get the next completion candidate.
-     * @param originalInput The original input text
-     * @param isAtMessageStart True if completing at the start (adds ": " suffix for nicks)
      * @return The new input text with completion applied, or null if no more candidates
      */
-    fun cycleNext(originalInput: String, isAtMessageStart: Boolean = false): String? {
+    fun cycleNext(): String? {
         if (candidates.isEmpty()) return null
 
         currentIndex = (currentIndex + 1) % candidates.size
-        return applyCompletion(originalInput, isAtMessageStart)
+        return applyCompletion()
     }
 
     /** Get the previous completion candidate (Shift+Tab). */
-    fun cyclePrevious(originalInput: String, isAtMessageStart: Boolean = false): String? {
+    fun cyclePrevious(): String? {
         if (candidates.isEmpty()) return null
 
         currentIndex = if (currentIndex <= 0) candidates.size - 1 else currentIndex - 1
-        return applyCompletion(originalInput, isAtMessageStart)
+        return applyCompletion()
     }
 
-    private fun applyCompletion(originalInput: String, isAtMessageStart: Boolean): String {
+    private fun applyCompletion(): String {
         val completion = candidates[currentIndex]
-        val prefix = originalInput.substring(0, wordStart)
-        val suffix = originalInput.substring(wordEnd)
+        val prefix = baseInput.substring(0, wordStart)
+        val suffix = baseInput.substring(wordEnd)
 
         // Add ": " suffix for nicknames at start of message
         val completionSuffix =
@@ -192,6 +200,8 @@ class TabCompletionHelper {
         candidates = emptyList()
         wordStart = 0
         wordEnd = 0
+        baseInput = ""
+        isAtMessageStart = false
     }
 
     /** Check if we're in an active completion cycle. */

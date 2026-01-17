@@ -242,12 +242,22 @@ class IrcClient(
 
     suspend fun sendMessage(target: String, message: String) {
         client?.sendMessage(target, message)
+
+        val isAction = message.startsWith("\u0001ACTION") && message.endsWith("\u0001")
+        val content =
+                if (isAction) {
+                    message.removePrefix("\u0001ACTION ").removeSuffix("\u0001")
+                } else {
+                    message
+                }
+        val type = if (isAction) MessageType.ACTION else MessageType.NORMAL
+
         _messages.emit(
                 IncomingMessage(
                         target = target,
                         sender = config.nickname,
-                        content = message,
-                        type = MessageType.NORMAL,
+                        content = content,
+                        type = type,
                         isSelf = true
                 )
         )
@@ -681,15 +691,18 @@ class IrcClient(
 
                         // Determine where to show the notice
                         // If it's from a service (NickServ, etc) OR addressed to us privately, show
-                        // in server tab
-                        // (or potentially active tab, but server tab is safer for now)
+                        // in server tab UNLESS we have a query window open for them.
 
-                        // We treat all notices as worth showing in Server tab for visibility
-                        // unless we want to route them to specific query windows.
+                        val destination =
+                                if (channels.value.containsKey(sender)) {
+                                    sender
+                                } else {
+                                    serverChannelName
+                                }
 
                         _messages.emit(
                                 IncomingMessage(
-                                        target = serverChannelName,
+                                        target = destination,
                                         sender = sender,
                                         content = message,
                                         type = MessageType.NOTICE
@@ -945,8 +958,14 @@ class IrcClient(
                                     ) {
                                         config.altNickname
                                     } else {
-                                        rejectedNick +
-                                                "_" // Use underscore instead of default quote
+                                        // Sanitize backticks (often added by Kitteh lib default) to
+                                        // underscores
+                                        val sanitized = rejectedNick.replace('`', '_')
+                                        if (sanitized != rejectedNick) {
+                                            sanitized
+                                        } else {
+                                            rejectedNick + "_"
+                                        }
                                     }
 
                             Logger.d(

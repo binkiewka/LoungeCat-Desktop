@@ -69,3 +69,29 @@ compose.resources {
     publicResClass = true
     packageOfResClass = "com.loungecat.irc.shared.generated.resources"
 }
+
+// Generate BuildConfig
+val buildConfigDir = layout.buildDirectory.dir("generated/source/buildConfig")
+val generateBuildConfig by tasks.registering {
+    val version = rootProject.version.toString()
+    outputs.dir(buildConfigDir)
+    doLast {
+        val file = buildConfigDir.get().asFile.resolve("com/loungecat/irc/BuildConfig.kt")
+        file.parentFile.mkdirs()
+        file.writeText("""
+            package com.loungecat.irc
+            
+            object BuildConfig {
+                const val VERSION = "$version"
+            }
+        """.trimIndent())
+    }
+}
+
+kotlin {
+    sourceSets {
+        commonMain {
+            kotlin.srcDir(generateBuildConfig)
+        }
+    }
+}

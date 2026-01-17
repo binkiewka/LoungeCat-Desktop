@@ -40,11 +40,13 @@ fun ChannelPane(
         val colors = AppColors.current
         var isUserListVisible by remember { mutableStateOf(true) }
 
-        val connection = connectionManager.getConnection(serverId)
+        val connectionStates by connectionManager.connectionStates.collectAsState()
+        val connection = connectionStates[serverId]
         // Accessing users via connection directly to ensure we get users for the specific server
-        val channelUsers =
-                connection?.channels?.find { it.name == channelName }?.users ?: emptyList()
+        val channel = connection?.channels?.find { it.name == channelName }
+        val channelUsers = channel?.users ?: emptyList()
         val serverName = connection?.config?.serverName ?: connection?.config?.hostname ?: ""
+        val topic = channel?.topic
 
         Column(modifier = Modifier.fillMaxSize()) {
                 // Header
@@ -56,55 +58,98 @@ fun ChannelPane(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                 ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                         text = channelName,
                                         style = MaterialTheme.typography.titleMedium,
                                         color = colors.foreground,
                                         fontWeight = FontWeight.Bold
                                 )
-                                Text(
-                                        text = serverName,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = colors.comment
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                                text = serverName,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = colors.comment
+                                        )
+                                        if (!topic.isNullOrBlank()) {
+                                                Text(
+                                                        text = " | ",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = colors.comment
+                                                )
+                                                AppTooltip(topic) {
+                                                        Text(
+                                                                text = topic,
+                                                                style =
+                                                                        MaterialTheme.typography
+                                                                                .bodySmall,
+                                                                color = colors.foreground,
+                                                                maxLines = 1,
+                                                                overflow =
+                                                                        androidx.compose.ui.text
+                                                                                .style.TextOverflow
+                                                                                .Ellipsis
+                                                        )
+                                                }
+                                        }
+                                }
                         }
 
                         Row {
                                 if (channelName.isNotEmpty()) {
-                                        IconButton(
-                                                onClick = { isUserListVisible = !isUserListVisible }
+                                        AppTooltip(
+                                                text =
+                                                        if (isUserListVisible) "Hide User List"
+                                                        else "Show User List"
                                         ) {
-                                                Icon(
-                                                        imageVector =
-                                                                if (isUserListVisible)
-                                                                        Icons.Default.People
-                                                                else Icons.Default.PeopleOutline,
-                                                        contentDescription = "Toggle User List",
-                                                        tint =
-                                                                if (isUserListVisible) colors.cyan
-                                                                else colors.comment,
-                                                        modifier = Modifier.size(20.dp)
-                                                )
+                                                IconButton(
+                                                        onClick = {
+                                                                isUserListVisible =
+                                                                        !isUserListVisible
+                                                        }
+                                                ) {
+                                                        Icon(
+                                                                imageVector =
+                                                                        if (isUserListVisible)
+                                                                                Icons.Default.People
+                                                                        else
+                                                                                Icons.Default
+                                                                                        .PeopleOutline,
+                                                                contentDescription =
+                                                                        "Toggle User List",
+                                                                tint =
+                                                                        if (isUserListVisible)
+                                                                                colors.cyan
+                                                                        else colors.comment,
+                                                                modifier = Modifier.size(20.dp)
+                                                        )
+                                                }
                                         }
-                                        IconButton(onClick = onJoinChannel) {
-                                                Icon(
-                                                        imageVector = Icons.Default.Add,
-                                                        contentDescription = "Join Channel",
-                                                        tint = colors.green,
-                                                        modifier = Modifier.size(20.dp)
-                                                )
+                                        AppTooltip(text = "Join Channel") {
+                                                IconButton(onClick = onJoinChannel) {
+                                                        Icon(
+                                                                imageVector = Icons.Default.Add,
+                                                                contentDescription = "Join Channel",
+                                                                tint = colors.green,
+                                                                modifier = Modifier.size(20.dp)
+                                                        )
+                                                }
                                         }
                                         // Close pane button (only shown when onClosePane is
                                         // provided)
                                         if (onClosePane != null) {
-                                                IconButton(onClick = onClosePane) {
-                                                        Icon(
-                                                                imageVector = Icons.Default.Close,
-                                                                contentDescription = "Close Pane",
-                                                                tint = colors.red,
-                                                                modifier = Modifier.size(20.dp)
-                                                        )
+                                                AppTooltip(text = "Close Pane") {
+                                                        IconButton(onClick = onClosePane) {
+                                                                Icon(
+                                                                        imageVector =
+                                                                                Icons.Default.Close,
+                                                                        contentDescription =
+                                                                                "Close Pane",
+                                                                        tint = colors.red,
+                                                                        modifier =
+                                                                                Modifier.size(20.dp)
+                                                                )
+                                                        }
                                                 }
                                         }
                                 }

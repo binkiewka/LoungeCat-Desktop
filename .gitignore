@@ -49,3 +49,4 @@ bin/
 CLAUDE.md
 .vscode/
 build_appimage.sh
+tests/

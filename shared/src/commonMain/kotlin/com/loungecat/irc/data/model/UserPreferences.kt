@@ -24,12 +24,22 @@ enum class UrlImageDisplayMode {
 }
 
 @Serializable
+enum class JoinPartQuitDisplayMode {
+    SHOW_ALL, // Show all join/part/quit messages (default)
+    HIDE_ALL, // Hide all join/part/quit messages
+    GROUPED, // Group consecutive messages into a single line
+    SMART_HIDE // Only show if user was recently active
+}
+
+@Serializable
 data class UserPreferences(
         val fontSize: FontSize = FontSize.MEDIUM,
         val timestampFormat: TimestampFormat = TimestampFormat.HOURS_24,
         val urlImageDisplayMode: UrlImageDisplayMode = UrlImageDisplayMode.INLINE,
         val coloredNicknames: Boolean = true,
-        val showJoinPartMessages: Boolean = true,
+        // Join/Part/Quit display options
+        val joinPartQuitMode: JoinPartQuitDisplayMode = JoinPartQuitDisplayMode.SHOW_ALL,
+        val smartHideMinutes: Int = 10, // Threshold for smart hide (in minutes)
         val ignoredUsers: Set<String> = emptySet(),
         // Batch 1: Activity Indicator
         val activityIndicatorMinutes: Int = 5,
@@ -57,4 +67,9 @@ data class UserPreferences(
         val soundVolume: Float = 0.7f,
         // Batch 5: Split View
         val splitViewEnabled: Boolean = false,
+        // Input History
+        val inputHistorySize: Int = 50,
+        // Logging & Replay
+        val loggingEnabled: Boolean = false,
+        val historyReplayLines: Int = 50,
 )

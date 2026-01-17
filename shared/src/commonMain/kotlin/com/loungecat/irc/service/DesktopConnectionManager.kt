@@ -1,6 +1,7 @@
 package com.loungecat.irc.service
 
 import com.loungecat.irc.data.model.*
+import com.loungecat.irc.data.model.MessageType
 import com.loungecat.irc.network.IrcClient
 import com.loungecat.irc.util.HighlightMatcher
 import com.loungecat.irc.util.ImageUrlDetector
@@ -8,6 +9,7 @@ import com.loungecat.irc.util.IrcCommand
 import com.loungecat.irc.util.IrcCommandParser
 import com.loungecat.irc.util.Logger
 import com.loungecat.irc.util.UrlExtractor
+import com.loungecat.irc.util.UserActivityTracker
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -53,8 +55,11 @@ class DesktopConnectionManager {
     private val _imageUrls = MutableStateFlow<Map<String, List<String>>>(emptyMap())
     val imageUrls: StateFlow<Map<String, List<String>>> = _imageUrls.asStateFlow()
 
-    private val _showJoinPartMessages = MutableStateFlow(true)
-    val showJoinPartMessages: StateFlow<Boolean> = _showJoinPartMessages.asStateFlow()
+    private val _joinPartQuitMode = MutableStateFlow(JoinPartQuitDisplayMode.SHOW_ALL)
+    val joinPartQuitMode: StateFlow<JoinPartQuitDisplayMode> = _joinPartQuitMode.asStateFlow()
+
+    // User activity tracker for smart hide feature
+    val userActivityTracker = UserActivityTracker()
 
     // User preferences state
     private val _userPreferences = MutableStateFlow(UserPreferences())
@@ -66,19 +71,45 @@ class DesktopConnectionManager {
     // Connection listener jobs tracking
     private val connectionListenerJobs = mutableMapOf<Long, List<Job>>()
 
+    // Connection stability jobs tracking (prevents rapid reconnect loops)
+    private val connectionStabilityJobs = mutableMapOf<Long, Job>()
+
+    // Message cache callback (set by platform-specific code)
     // Message cache callback (set by platform-specific code)
     var messageCacheLoader: ((Long, String) -> List<IncomingMessage>)? = null
-    var messageCacheSaver: ((Long, String, List<IncomingMessage>) -> Unit)? = null
+    var messageCacheSaver: ((Long, String, List<IncomingMessage>, String?) -> Unit)? = null
     var messageCachePaginatedLoader: ((Long, String, Int, Int) -> List<IncomingMessage>)? = null
     var messageCacheCountLoader: ((Long, String) -> Int)? = null
+
+    // Topic Loading Callback
+    var topicLoader: ((Long, String) -> String?)? = null
+
+    // Text Logger Callback
+    var textLogger: ((Long, String, String, IncomingMessage) -> Unit)? = null
 
     // Track loading state for scrollback
     private val _isLoadingOlderMessages = MutableStateFlow(false)
     val isLoadingOlderMessages: StateFlow<Boolean> = _isLoadingOlderMessages.asStateFlow()
 
-    fun setShowJoinPartMessages(show: Boolean) {
-        _showJoinPartMessages.value = show
-        updatePreference { it.copy(showJoinPartMessages = show) }
+    fun setJoinPartQuitMode(mode: JoinPartQuitDisplayMode) {
+        _joinPartQuitMode.value = mode
+        updatePreference { it.copy(joinPartQuitMode = mode) }
+    }
+
+    fun setInputHistorySize(size: Int) {
+        updatePreference { it.copy(inputHistorySize = size) }
+    }
+
+    fun setLoggingEnabled(enabled: Boolean) {
+        updatePreference { it.copy(loggingEnabled = enabled) }
+    }
+
+    fun setHistoryReplayLines(lines: Int) {
+        updatePreference { it.copy(historyReplayLines = lines) }
+    }
+
+    fun setSmartHideMinutes(minutes: Int) {
+        updatePreference { it.copy(smartHideMinutes = minutes) }
     }
 
     fun setFontSize(fontSize: FontSize) {
@@ -138,7 +169,7 @@ class DesktopConnectionManager {
 
     fun loadPreferences(prefs: UserPreferences) {
         _userPreferences.value = prefs
-        _showJoinPartMessages.value = prefs.showJoinPartMessages
+        _joinPartQuitMode.value = prefs.joinPartQuitMode
         ignoredUsers = prefs.ignoredUsers
     }
 
@@ -405,13 +436,18 @@ class DesktopConnectionManager {
                         )
                     }
 
+                    // Cancel stability job
+                    connectionStabilityJobs[serverId]?.cancel()
+                    connectionStabilityJobs.remove(serverId)
+
                     val updatedConnection =
                             connection.copy(
                                     config = updatedConfig,
                                     connectionState = ConnectionState.Disconnected,
                                     channels = emptyList(),
                                     messages = emptyMap(),
-                                    manuallyDisconnected = true
+                                    manuallyDisconnected = true,
+                                    reconnectAttempt = 0 // Reset on manual disconnect
                             )
                     _connections.update { it + (serverId to updatedConnection) }
 
@@ -467,7 +503,13 @@ class DesktopConnectionManager {
 
                     // Cancel reconnect jobs
                     reconnectJobs[serverId]?.cancel()
+                    // Cancel reconnect jobs
+                    reconnectJobs[serverId]?.cancel()
                     reconnectJobs.remove(serverId)
+
+                    // Cancel stability jobs
+                    connectionStabilityJobs[serverId]?.cancel()
+                    connectionStabilityJobs.remove(serverId)
 
                     updateServerList()
                 }
@@ -583,6 +625,9 @@ class DesktopConnectionManager {
             }
             is IrcCommand.Nick -> connection.client.sendRawCommand("NICK ${command.newNick}")
             is IrcCommand.Identify -> {
+                // Ensure NickServ window is open so the reply goes there
+                startPrivateMessage("NickServ")
+
                 val msg = "IDENTIFY ${command.args}"
                 connection.client.sendRawCommand("PRIVMSG NickServ :$msg")
                 addSystemMessage(
@@ -721,22 +766,28 @@ class DesktopConnectionManager {
             is IrcCommand.Motd -> connection.client.sendRawCommand("MOTD ${command.server ?: ""}")
             is IrcCommand.Info -> connection.client.sendRawCommand("INFO ${command.server ?: ""}")
             is IrcCommand.NickServ -> {
-                val cmd =
-                        if (command.args.isNotBlank()) "PRIVMSG NickServ :${command.args}"
-                        else "PRIVMSG NickServ :HELP"
-                connection.client.sendRawCommand(cmd)
+                startPrivateMessage("NickServ")
+                if (command.args.isNotBlank()) {
+                    sendMessage(serverId, "NickServ", command.args)
+                } else {
+                    sendMessage(serverId, "NickServ", "HELP")
+                }
             }
             is IrcCommand.ChanServ -> {
-                val cmd =
-                        if (command.args.isNotBlank()) "PRIVMSG ChanServ :${command.args}"
-                        else "PRIVMSG ChanServ :HELP"
-                connection.client.sendRawCommand(cmd)
+                startPrivateMessage("ChanServ")
+                if (command.args.isNotBlank()) {
+                    sendMessage(serverId, "ChanServ", command.args)
+                } else {
+                    sendMessage(serverId, "ChanServ", "HELP")
+                }
             }
             is IrcCommand.MemoServ -> {
-                val cmd =
-                        if (command.args.isNotBlank()) "PRIVMSG MemoServ :${command.args}"
-                        else "PRIVMSG MemoServ :HELP"
-                connection.client.sendRawCommand(cmd)
+                startPrivateMessage("MemoServ")
+                if (command.args.isNotBlank()) {
+                    sendMessage(serverId, "MemoServ", command.args)
+                } else {
+                    sendMessage(serverId, "MemoServ", "HELP")
+                }
             }
             is IrcCommand.Links -> connection.client.sendRawCommand("LINKS ${command.server ?: ""}")
             is IrcCommand.Map -> connection.client.sendRawCommand("MAP ${command.server ?: ""}")
@@ -818,14 +869,30 @@ class DesktopConnectionManager {
             val updatedMessages =
                     if (currentChannelMessages.isNullOrEmpty()) {
                         // Try to load from cache
+                        val limit = _userPreferences.value.historyReplayLines
                         val cachedMessages =
                                 messageCacheLoader?.invoke(serverId, channelName) ?: emptyList()
-                        if (cachedMessages.isNotEmpty()) {
+
+                        // We might want to respect the limit here immediately for display
+                        val displayedMessages =
+                                if (cachedMessages.size > limit) {
+                                    cachedMessages.takeLast(limit)
+                                } else {
+                                    cachedMessages
+                                }
+
+                        if (displayedMessages.isNotEmpty()) {
                             Logger.d(
                                     "DesktopConnectionManager",
-                                    "Loaded ${cachedMessages.size} cached messages for $channelName"
+                                    "Loaded ${displayedMessages.size} cached messages for $channelName"
                             )
-                            connection.messages + (channelName to cachedMessages)
+                            // Process URLs for previews in cached messages
+                            displayedMessages.forEach { msg ->
+                                if (msg.type == MessageType.NORMAL) {
+                                    processMessageUrls(msg)
+                                }
+                            }
+                            connection.messages + (channelName to displayedMessages)
                         } else {
                             connection.messages
                         }
@@ -937,6 +1004,14 @@ class DesktopConnectionManager {
                     "DesktopConnectionManager",
                     "Loaded ${olderMessages.size} older messages for $channelName"
             )
+
+            // Process URLs for previews in older messages
+            olderMessages.forEach { msg ->
+                if (msg.type == MessageType.NORMAL) {
+                    processMessageUrls(msg)
+                }
+            }
+
             return olderMessages.size
         } finally {
             _isLoadingOlderMessages.value = false
@@ -949,8 +1024,13 @@ class DesktopConnectionManager {
         reconnectJobs.clear()
 
         // Cancel all listener jobs
+        // Cancel all listener jobs
         connectionListenerJobs.values.flatten().forEach { it.cancel() }
         connectionListenerJobs.clear()
+
+        // Cancel all stability jobs
+        connectionStabilityJobs.values.forEach { it.cancel() }
+        connectionStabilityJobs.clear()
 
         disconnectAll()
         managerScope.cancel()
@@ -992,12 +1072,39 @@ class DesktopConnectionManager {
             val updatedConnection =
                     when (state) {
                         is ConnectionState.Connected -> {
-                            // Reset reconnect attempts on successful connection
+                            // Reset reconnect attempts ONLY after stability check
                             reconnectJobs[serverId]?.cancel()
                             reconnectJobs.remove(serverId)
-                            connection.copy(connectionState = state, reconnectAttempt = 0)
+
+                            // Cancel any existing stability job
+                            connectionStabilityJobs[serverId]?.cancel()
+
+                            // Start new stability job
+                            connectionStabilityJobs[serverId] =
+                                    managerScope.launch {
+                                        delay(120_000) // 2 minutes stability threshold
+                                        _connections.update { current ->
+                                            val conn = current[serverId] ?: return@update current
+                                            if (conn.isConnected()) {
+                                                Logger.d(
+                                                        "DesktopConnectionManager",
+                                                        "Connection stable for server $serverId, resetting reconnect attempts"
+                                                )
+                                                current +
+                                                        (serverId to
+                                                                conn.copy(reconnectAttempt = 0))
+                                            } else current
+                                        }
+                                    }
+
+                            // Don't reset reconnectAttempt yet
+                            connection.copy(connectionState = state)
                         }
                         is ConnectionState.Disconnected, is ConnectionState.Error -> {
+                            // Cancel stability job - we failed to stay connected
+                            connectionStabilityJobs[serverId]?.cancel()
+                            connectionStabilityJobs.remove(serverId)
+
                             // Schedule reconnect if not manually disconnected
                             if (!connection.manuallyDisconnected) {
                                 scheduleReconnect(serverId, connection.reconnectAttempt)
@@ -1094,6 +1201,31 @@ class DesktopConnectionManager {
             return
         }
 
+        // Topic Deduplication
+        if (message.type == MessageType.TOPIC) {
+            val cachedTopic = topicLoader?.invoke(serverId, message.target)
+            val newTopic = message.content.removePrefix("Topic: ")
+            // Simple extraction, depends on how IrcClient formats "Topic: "
+            // The IrcClient sends "Topic: ${topic}" so we check containment or exact match if
+            // possible
+            // But simpler: just save it. The logic to NOT show it requires filtering.
+
+            // Wait, if it's identical to cached, we return.
+            // We need to parse strict content.
+            // In IrcClient: content = "Topic: ${topic ?: "(no topic)"}"
+            val actualTopicContent =
+                    if (message.content.startsWith("Topic: ")) {
+                        message.content.substring(7)
+                    } else {
+                        message.content
+                    }
+
+            if (cachedTopic == actualTopicContent) {
+                Logger.d("DesktopConnectionManager", "Deduplicated topic for ${message.target}")
+                return
+            }
+        }
+
         _connections.update { currentConnections ->
             val connection = currentConnections[serverId] ?: return@update currentConnections
 
@@ -1111,7 +1243,14 @@ class DesktopConnectionManager {
             val updatedConnection = connection.copy(messages = updatedMessages)
 
             // Side effect: Save to cache (safe to call here or outside, but we need targetMessages)
-            messageCacheSaver?.invoke(serverId, message.target, targetMessages)
+            // If it's a topic update, pass the topic
+            val topicToSave =
+                    if (message.type == MessageType.TOPIC) {
+                        if (message.content.startsWith("Topic: ")) message.content.substring(7)
+                        else message.content
+                    } else null
+
+            messageCacheSaver?.invoke(serverId, message.target, targetMessages, topicToSave)
 
             currentConnections + (serverId to updatedConnection)
         }
@@ -1123,8 +1262,21 @@ class DesktopConnectionManager {
             connections[serverId]?.let { _messages.value = it.messages }
         }
 
-        if (message.type == MessageType.NORMAL) {
-            processMessageUrls(message)
+        if (message.type == MessageType.NORMAL || message.type == MessageType.ACTION) {
+            // Track user activity for smart hide feature
+            if (!message.isSelf) {
+                userActivityTracker.recordActivity(message.target, message.sender)
+            }
+            if (message.type == MessageType.NORMAL) {
+                processMessageUrls(message)
+            }
+        }
+
+        // Text Logging
+        if (_userPreferences.value.loggingEnabled) {
+            connections[serverId]?.let { conn ->
+                textLogger?.invoke(serverId, conn.config.serverName, message.target, message)
+            }
         }
 
         // Check for mentions and highlights

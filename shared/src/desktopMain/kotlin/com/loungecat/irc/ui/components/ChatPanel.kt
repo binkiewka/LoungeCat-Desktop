@@ -38,11 +38,14 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.loungecat.irc.data.model.JoinPartQuitDisplayMode
+import com.loungecat.irc.data.model.MessageType
 import com.loungecat.irc.data.model.UserPreferences
 import com.loungecat.irc.service.DesktopConnectionManager
 import com.loungecat.irc.shared.generated.resources.Res
 import com.loungecat.irc.shared.generated.resources.logo_transparent
 import com.loungecat.irc.ui.theme.AppColors
+import com.loungecat.irc.util.InputHistoryHelper
 import com.loungecat.irc.util.SpellCheckRuleMatch
 import com.loungecat.irc.util.SpellChecker
 import com.loungecat.irc.util.TabCompletionHelper
@@ -70,20 +73,40 @@ fun ChatPanel(
     val urlPreviews by connectionManager.urlPreviews.collectAsState()
     val imageUrls by connectionManager.imageUrls.collectAsState()
 
-    val showJoinPartMessages = userPreferences.showJoinPartMessages
+    val joinPartQuitMode = userPreferences.joinPartQuitMode
+    val smartHideMinutes = userPreferences.smartHideMinutes
+    val activityTracker = connectionManager.userActivityTracker
+
     val channelMessages =
-            remember(messages, channelName, showJoinPartMessages) {
-                val allMessages = messages[channelName] ?: emptyList()
-                if (showJoinPartMessages) {
-                    allMessages
-                } else {
-                    allMessages.filter {
-                        it.type !in
-                                listOf(
-                                        com.loungecat.irc.data.model.MessageType.JOIN,
-                                        com.loungecat.irc.data.model.MessageType.PART,
-                                        com.loungecat.irc.data.model.MessageType.QUIT
+            remember(messages, channelName, joinPartQuitMode, smartHideMinutes) {
+                // Filter out TOPIC messages as they are now displayed in the channel bar header
+                val allMessages =
+                        (messages[channelName] ?: emptyList()).filter {
+                            it.type != MessageType.TOPIC
+                        }
+                val jpqTypes = listOf(MessageType.JOIN, MessageType.PART, MessageType.QUIT)
+
+                when (joinPartQuitMode) {
+                    JoinPartQuitDisplayMode.SHOW_ALL -> allMessages
+                    JoinPartQuitDisplayMode.HIDE_ALL -> allMessages.filter { it.type !in jpqTypes }
+                    JoinPartQuitDisplayMode.GROUPED -> {
+                        // For grouped mode, we'll mark consecutive events for grouping
+                        // For now, just show all (grouping UI will be added later)
+                        allMessages
+                    }
+                    JoinPartQuitDisplayMode.SMART_HIDE -> {
+                        allMessages.filter { msg ->
+                            if (msg.type in jpqTypes) {
+                                // Only show if user was recently active
+                                activityTracker.wasRecentlyActive(
+                                        channelName,
+                                        msg.sender,
+                                        smartHideMinutes
                                 )
+                            } else {
+                                true
+                            }
+                        }
                     }
                 }
             }
@@ -98,6 +121,7 @@ fun ChatPanel(
     var spellCheckErrors by remember { mutableStateOf<List<SpellCheckRuleMatch>>(emptyList()) }
 
     val tabCompletionHelper = remember { TabCompletionHelper() }
+    val inputHistoryHelper = remember { InputHistoryHelper(userPreferences.inputHistorySize) }
     val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(isActive) {
@@ -357,23 +381,17 @@ fun ChatPanel(
                                                                             .start, // Use cursor
                                                                     // position
                                                                     currentUsers,
-                                                                    channels
+                                                                    channels,
+                                                                    isAtStart
                                                             )
                                                         }
 
                                                         val completed =
                                                                 if (event.isShiftPressed) {
                                                                     tabCompletionHelper
-                                                                            .cyclePrevious(
-                                                                                    messageInput
-                                                                                            .text,
-                                                                                    isAtStart
-                                                                            )
+                                                                            .cyclePrevious()
                                                                 } else {
-                                                                    tabCompletionHelper.cycleNext(
-                                                                            messageInput.text,
-                                                                            isAtStart
-                                                                    )
+                                                                    tabCompletionHelper.cycleNext()
                                                                 }
 
                                                         completed?.let {
@@ -392,9 +410,47 @@ fun ChatPanel(
                                                             event.type == KeyEventType.KeyDown &&
                                                             !event.isShiftPressed -> {
                                                         if (messageInput.text.isNotBlank()) {
+                                                            // Add to input history before sending
+                                                            inputHistoryHelper.addMessage(
+                                                                    channelName,
+                                                                    messageInput.text
+                                                            )
                                                             onSendMessage(messageInput.text)
                                                             messageInput = TextFieldValue("")
                                                             tabCompletionHelper.reset()
+                                                        }
+                                                        true
+                                                    }
+                                                    // Arrow Up - navigate history backward
+                                                    event.key == Key.DirectionUp &&
+                                                            event.type == KeyEventType.KeyDown -> {
+                                                        val historyMessage =
+                                                                inputHistoryHelper.navigateUp(
+                                                                        channelName,
+                                                                        messageInput.text
+                                                                )
+                                                        historyMessage?.let {
+                                                            messageInput =
+                                                                    TextFieldValue(
+                                                                            it,
+                                                                            TextRange(it.length)
+                                                                    )
+                                                        }
+                                                        true
+                                                    }
+                                                    // Arrow Down - navigate history forward
+                                                    event.key == Key.DirectionDown &&
+                                                            event.type == KeyEventType.KeyDown -> {
+                                                        val historyMessage =
+                                                                inputHistoryHelper.navigateDown(
+                                                                        channelName
+                                                                )
+                                                        historyMessage?.let {
+                                                            messageInput =
+                                                                    TextFieldValue(
+                                                                            it,
+                                                                            TextRange(it.length)
+                                                                    )
                                                         }
                                                         true
                                                     }
@@ -533,19 +589,21 @@ fun ChatPanel(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                IconButton(
-                        onClick = {
-                            if (messageInput.text.isNotBlank()) {
-                                onSendMessage(messageInput.text)
-                                messageInput = TextFieldValue("")
+                AppTooltip(text = "Send Message") {
+                    IconButton(
+                            onClick = {
+                                if (messageInput.text.isNotBlank()) {
+                                    onSendMessage(messageInput.text)
+                                    messageInput = TextFieldValue("")
+                                }
                             }
-                        }
-                ) {
-                    Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send",
-                            tint = colors.green
-                    )
+                    ) {
+                        Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send",
+                                tint = colors.green
+                        )
+                    }
                 }
             }
         }
