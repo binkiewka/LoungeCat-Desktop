@@ -37,7 +37,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Deb, TargetFormat.AppImage, TargetFormat.Msi, TargetFormat.Rpm)
             packageName = "LoungeCat"
-            packageVersion = "1.0.16"
+            packageVersion = project.version.toString()
             description = "Loungecat"
             vendor = "LoungeCat"
             

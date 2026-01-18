@@ -16,6 +16,8 @@ serialization = "1.7.3"
 languagetool = "6.5"
 junit = "4.13.2"
 shadow = "8.1.1"
+trixnity = "4.22.7"
+ktor = "3.0.1"
 
 [libraries]
 # System Tray for Linux (AppIndicator support)
@@ -63,6 +65,8 @@ languagetool-fr = { group = "org.languagetool", name = "language-fr", version.re
 languagetool-nl = { group = "org.languagetool", name = "language-nl", version.ref = "languagetool" }
 languagetool-pl = { group = "org.languagetool", name = "language-pl", version.ref = "languagetool" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+trixnity-client = { group = "net.folivo", name = "trixnity-client", version.ref = "trixnity" }
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
@@ -73,3 +77,4 @@ compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 room = { id = "androidx.room", version.ref = "room" }
 shadow = { id = "com.github.johnrengelman.shadow", version.ref = "shadow" }
+

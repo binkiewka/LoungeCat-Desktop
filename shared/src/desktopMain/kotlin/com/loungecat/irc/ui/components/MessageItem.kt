@@ -5,6 +5,8 @@ import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -39,7 +41,8 @@ fun MessageItem(
         onRequestWhois: ((String) -> Unit)? = null,
         selectionController: SelectionController? = null,
         selectionHighlightColor: Color = Color.Blue.copy(alpha = 0.3f),
-        onCopySelection: ((String) -> Unit)? = null
+        onCopySelection: ((String) -> Unit)? = null,
+        onLoadPreview: ((String) -> Unit)? = null
 ) {
         val colors = AppColors.current
 
@@ -357,28 +360,67 @@ fun MessageItem(
                 }
 
                 // Only show previews if not DISABLED
-                if (urlImageDisplayMode != UrlImageDisplayMode.DISABLED &&
-                                (imageUrls.isNotEmpty() || urlPreviews.isNotEmpty())
-                ) {
-                        Column(
-                                modifier =
-                                        Modifier.fillMaxWidth()
-                                                .padding(start = 48.dp, top = 4.dp, bottom = 4.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                                if (imageUrls.isNotEmpty()) {
-                                        when (urlImageDisplayMode) {
-                                                UrlImageDisplayMode.COMPACT ->
-                                                        CompactImageRow(imageUrls = imageUrls)
-                                                else -> ImageGallery(imageUrls = imageUrls)
+                if (urlImageDisplayMode != UrlImageDisplayMode.DISABLED) {
+                        if (imageUrls.isNotEmpty() || urlPreviews.isNotEmpty()) {
+                                Column(
+                                        modifier =
+                                                Modifier.fillMaxWidth()
+                                                        .padding(
+                                                                start = 48.dp,
+                                                                top = 4.dp,
+                                                                bottom = 4.dp
+                                                        ),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                        if (imageUrls.isNotEmpty()) {
+                                                when (urlImageDisplayMode) {
+                                                        UrlImageDisplayMode.COMPACT ->
+                                                                CompactImageRow(
+                                                                        imageUrls = imageUrls
+                                                                )
+                                                        else -> ImageGallery(imageUrls = imageUrls)
+                                                }
+                                        }
+
+                                        urlPreviews.forEach { preview ->
+                                                when (urlImageDisplayMode) {
+                                                        UrlImageDisplayMode.COMPACT ->
+                                                                CompactUrlPreviewCard(
+                                                                        preview = preview
+                                                                )
+                                                        else -> UrlPreviewCard(preview = preview)
+                                                }
                                         }
                                 }
+                        } else {
+                                // Check for unloaded URLs (security feature)
+                                // We do a quick regex check or use UrlExtractor if available,
+                                // but for performance we might just check http prefix for now or
+                                // rely on caller?
+                                // Actually, simply: content has http, but no previews/images and
+                                // mode is enabled.
+                                val hasLink =
+                                        message.content.contains("http://") ||
+                                                message.content.contains("https://")
+                                val isNotSelf = !message.isSelf
 
-                                urlPreviews.forEach { preview ->
-                                        when (urlImageDisplayMode) {
-                                                UrlImageDisplayMode.COMPACT ->
-                                                        CompactUrlPreviewCard(preview = preview)
-                                                else -> UrlPreviewCard(preview = preview)
+                                if (hasLink && isNotSelf && message.type == MessageType.NORMAL) {
+                                        androidx.compose.material3.TextButton(
+                                                onClick = { onLoadPreview?.invoke(message.id) },
+                                                modifier =
+                                                        Modifier.padding(start = 48.dp, top = 2.dp)
+                                        ) {
+                                                androidx.compose.material3.Icon(
+                                                        androidx.compose.material.icons.Icons
+                                                                .Default.Refresh,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(
+                                                        "Load Link Preview",
+                                                        fontSize = scaledSmallSize
+                                                )
                                         }
                                 }
                         }

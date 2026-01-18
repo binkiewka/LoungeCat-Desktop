@@ -72,4 +72,8 @@ data class UserPreferences(
         // Logging & Replay
         val loggingEnabled: Boolean = false,
         val historyReplayLines: Int = 50,
+        // Link Preview Security
+        val processLinkPreviewsFromOthers: Boolean = false,
+        val trustedPreviewUsers: Set<String> = emptySet(),
+        val useProxyForPreviews: Boolean = true
 )

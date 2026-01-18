@@ -374,6 +374,9 @@ fun ChatPanel(
                                         onCopySelection = { text ->
                                             clipboardManager.setText(AnnotatedString(text))
                                             selectionController.clearSelection()
+                                        },
+                                        onLoadPreview = { msgId ->
+                                            connectionManager.fetchPreviewForMessage(msgId)
                                         }
                                 )
                             }

@@ -27,133 +27,168 @@ fun UserContextMenu(
         onWhois: ((String) -> Unit)? = null,
         onModerate: ((String) -> Unit)? = null,
         onToggleIgnore: ((String) -> Unit)? = null,
-        isIgnored: Boolean = false
+        isIgnored: Boolean = false,
+        onToggleTrust: ((String) -> Unit)? = null,
+        isTrusted: Boolean = false
 ) {
-    val colors = AppColors.current
+        val colors = AppColors.current
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-                modifier = Modifier.width(280.dp),
-                shape = RoundedCornerShape(16.dp),
-                color = colors.windowBackground
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                        modifier =
-                                Modifier.fillMaxWidth()
-                                        .background(colors.currentLine)
-                                        .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+        Dialog(onDismissRequest = onDismiss) {
+                Surface(
+                        modifier = Modifier.width(280.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = colors.windowBackground
                 ) {
-                    Icon(
-                            imageVector =
-                                    when {
-                                        user.isOp -> Icons.Default.Shield
-                                        user.isVoiced -> Icons.AutoMirrored.Filled.VolumeUp
-                                        else -> Icons.Default.Person
-                                    },
-                            contentDescription = null,
-                            tint =
-                                    when {
-                                        user.isOp -> colors.red
-                                        user.isVoiced -> colors.green
-                                        else -> colors.cyan
-                                    },
-                            modifier = Modifier.size(32.dp)
-                    )
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                        modifier =
+                                                Modifier.fillMaxWidth()
+                                                        .background(colors.currentLine)
+                                                        .padding(16.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                        Icon(
+                                                imageVector =
+                                                        when {
+                                                                user.isOp -> Icons.Default.Shield
+                                                                user.isVoiced ->
+                                                                        Icons.AutoMirrored.Filled
+                                                                                .VolumeUp
+                                                                else -> Icons.Default.Person
+                                                        },
+                                                contentDescription = null,
+                                                tint =
+                                                        when {
+                                                                user.isOp -> colors.red
+                                                                user.isVoiced -> colors.green
+                                                                else -> colors.cyan
+                                                        },
+                                                modifier = Modifier.size(32.dp)
+                                        )
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                                        Spacer(modifier = Modifier.width(12.dp))
 
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                                text = user.nickname,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = colors.foreground
-                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                        text = user.nickname,
+                                                        style =
+                                                                MaterialTheme.typography
+                                                                        .titleMedium,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = colors.foreground
+                                                )
 
-                        val statusText =
-                                when {
-                                    user.isOp -> "Channel Operator"
-                                    user.isVoiced -> "Voiced User"
-                                    else -> "User"
+                                                val statusText =
+                                                        when {
+                                                                user.isOp -> "Channel Operator"
+                                                                user.isVoiced -> "Voiced User"
+                                                                else -> "User"
+                                                        }
+                                                Text(
+                                                        text = statusText,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = colors.comment
+                                                )
+                                        }
+
+                                        IconButton(onClick = onDismiss) {
+                                                Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = "Close",
+                                                        tint = colors.foreground
+                                                )
+                                        }
                                 }
-                        Text(
-                                text = statusText,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = colors.comment
-                        )
-                    }
 
-                    IconButton(onClick = onDismiss) {
-                        Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Close",
-                                tint = colors.foreground
-                        )
-                    }
+                                HorizontalDivider(color = colors.border)
+
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                        UserActionItem(
+                                                icon = Icons.AutoMirrored.Filled.Message,
+                                                iconTint = colors.cyan,
+                                                title = "Send Private Message",
+                                                description = "Start a conversation",
+                                                onClick = {
+                                                        onStartPM(user.nickname)
+                                                        onDismiss()
+                                                }
+                                        )
+
+                                        if (onWhois != null) {
+                                                UserActionItem(
+                                                        icon = Icons.Default.Info,
+                                                        iconTint = colors.purple,
+                                                        title = "User Info (WHOIS)",
+                                                        description = "View detailed information",
+                                                        onClick = {
+                                                                onWhois(user.nickname)
+                                                                onDismiss()
+                                                        }
+                                                )
+                                        }
+
+                                        if (onModerate != null) {
+                                                UserActionItem(
+                                                        icon = Icons.Default.Shield,
+                                                        iconTint = colors.red,
+                                                        title = "Moderation Actions",
+                                                        description = "Kick, ban, or manage user",
+                                                        onClick = {
+                                                                onModerate(user.nickname)
+                                                                onDismiss()
+                                                        }
+                                                )
+                                        }
+
+                                        if (onToggleIgnore != null) {
+                                                UserActionItem(
+                                                        icon =
+                                                                if (isIgnored) Icons.Default.Person
+                                                                else Icons.Default.PersonOff,
+                                                        iconTint =
+                                                                if (isIgnored) colors.green
+                                                                else colors.orange,
+                                                        title =
+                                                                if (isIgnored) "Unignore User"
+                                                                else "Ignore User",
+                                                        description =
+                                                                if (isIgnored)
+                                                                        "Show messages from user"
+                                                                else "Hide messages from user",
+                                                        onClick = {
+                                                                onToggleIgnore(user.nickname)
+                                                                onDismiss()
+                                                        }
+                                                )
+                                        }
+
+                                        if (onToggleTrust != null) {
+                                                UserActionItem(
+                                                        icon =
+                                                                if (isTrusted)
+                                                                        Icons.Default.VerifiedUser
+                                                                else Icons.Default.Security,
+                                                        iconTint =
+                                                                if (isTrusted) colors.orange
+                                                                else colors.green,
+                                                        title =
+                                                                if (isTrusted)
+                                                                        "Revoke Preview Trust"
+                                                                else "Trust for Previews",
+                                                        description =
+                                                                if (isTrusted)
+                                                                        "Stop auto-loading links"
+                                                                else "Auto-load links from user",
+                                                        onClick = {
+                                                                onToggleTrust(user.nickname)
+                                                                onDismiss()
+                                                        }
+                                                )
+                                        }
+                                }
+                        }
                 }
-
-                HorizontalDivider(color = colors.border)
-
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    UserActionItem(
-                            icon = Icons.AutoMirrored.Filled.Message,
-                            iconTint = colors.cyan,
-                            title = "Send Private Message",
-                            description = "Start a conversation",
-                            onClick = {
-                                onStartPM(user.nickname)
-                                onDismiss()
-                            }
-                    )
-
-                    if (onWhois != null) {
-                        UserActionItem(
-                                icon = Icons.Default.Info,
-                                iconTint = colors.purple,
-                                title = "User Info (WHOIS)",
-                                description = "View detailed information",
-                                onClick = {
-                                    onWhois(user.nickname)
-                                    onDismiss()
-                                }
-                        )
-                    }
-
-                    if (onModerate != null) {
-                        UserActionItem(
-                                icon = Icons.Default.Shield,
-                                iconTint = colors.red,
-                                title = "Moderation Actions",
-                                description = "Kick, ban, or manage user",
-                                onClick = {
-                                    onModerate(user.nickname)
-                                    onDismiss()
-                                }
-                        )
-                    }
-
-                    if (onToggleIgnore != null) {
-                        UserActionItem(
-                                icon =
-                                        if (isIgnored) Icons.Default.Person
-                                        else Icons.Default.PersonOff,
-                                iconTint = if (isIgnored) colors.green else colors.orange,
-                                title = if (isIgnored) "Unignore User" else "Ignore User",
-                                description =
-                                        if (isIgnored) "Show messages from user"
-                                        else "Hide messages from user",
-                                onClick = {
-                                    onToggleIgnore(user.nickname)
-                                    onDismiss()
-                                }
-                        )
-                    }
-                }
-            }
         }
-    }
 }
 
 @Composable
@@ -164,41 +199,41 @@ private fun UserActionItem(
         description: String,
         onClick: () -> Unit
 ) {
-    val colors = AppColors.current
+        val colors = AppColors.current
 
-    Row(
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconTint,
-                modifier = Modifier.size(24.dp)
-        )
+        Row(
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+        ) {
+                Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = iconTint,
+                        modifier = Modifier.size(24.dp)
+                )
 
-        Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(16.dp))
 
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = colors.foreground
-            )
+                Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                                text = title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = colors.foreground
+                        )
 
-            Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.comment
-            )
+                        Text(
+                                text = description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.comment
+                        )
+                }
+
+                Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = colors.comment,
+                        modifier = Modifier.size(20.dp)
+                )
         }
-
-        Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = colors.comment,
-                modifier = Modifier.size(20.dp)
-        )
-    }
 }

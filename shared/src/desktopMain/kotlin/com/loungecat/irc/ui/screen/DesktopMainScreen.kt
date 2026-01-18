@@ -533,6 +533,8 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
 
     selectedUserForContextMenu?.let { user ->
         val isIgnored = userPreferences.ignoredUsers.contains(user.nickname.lowercase())
+        val isTrusted = userPreferences.trustedPreviewUsers.contains(user.nickname.lowercase())
+
         UserContextMenu(
                 user = user,
                 onDismiss = { selectedUserForContextMenu = null },
@@ -557,7 +559,16 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                     }
                     selectedUserForContextMenu = null
                 },
-                isIgnored = isIgnored
+                isIgnored = isIgnored,
+                onToggleTrust = { nickname ->
+                    if (isTrusted) {
+                        connectionManager.untrustUserForPreviews(nickname)
+                    } else {
+                        connectionManager.trustUserForPreviews(nickname)
+                    }
+                    selectedUserForContextMenu = null
+                },
+                isTrusted = isTrusted
         )
     }
 
@@ -599,6 +610,10 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                 },
                 onLoggingEnabledChange = { connectionManager.setLoggingEnabled(it) },
                 onHistoryReplayLinesChange = { connectionManager.setHistoryReplayLines(it) },
+                onProcessLinkPreviewsFromOthersChange = {
+                    connectionManager.setProcessLinkPreviewsFromOthers(it)
+                },
+                onUseProxyForPreviewsChange = { connectionManager.setUseProxyForPreviews(it) },
                 onDismiss = { showSettingsDialog = false }
         )
     }
@@ -714,7 +729,7 @@ private fun ChannelListItem(
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                    text = channel.name,
+                    text = channel.displayName ?: channel.name,
                     color = if (isSelected) colors.cyan else colors.foreground,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.weight(1f)
@@ -1078,6 +1093,9 @@ private fun UserItem(user: ChannelUser, onClick: () -> Unit) {
 private fun AddServerDialog(onDismiss: () -> Unit, onConnect: (ServerConfig) -> Unit) {
     val colors = AppColors.current
 
+    var serverType by remember { mutableStateOf(ServerType.IRC) }
+    var matrixHomeserver by remember { mutableStateOf("") }
+    var matrixAccessToken by remember { mutableStateOf("") }
     var serverName by remember { mutableStateOf("") }
     var hostname by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("6697") }
@@ -1119,194 +1137,27 @@ private fun AddServerDialog(onDismiss: () -> Unit, onConnect: (ServerConfig) -> 
                                 value = serverName,
                                 onValueChange = { serverName = it },
                                 label = { Text("Server Name") },
-                                placeholder = { Text("e.g., Libera Chat") },
+                                placeholder = {
+                                    Text(
+                                            if (serverType == ServerType.MATRIX) "e.g., Matrix"
+                                            else "e.g., Libera Chat"
+                                    )
+                                },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true
                         )
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                    value = hostname,
-                                    onValueChange = { hostname = it },
-                                    label = { Text("Hostname") },
-                                    placeholder = { Text("irc.libera.chat") },
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true
-                            )
-                            OutlinedTextField(
-                                    value = port,
-                                    onValueChange = { port = it.filter { c -> c.isDigit() } },
-                                    label = { Text("Port") },
-                                    modifier = Modifier.width(100.dp),
-                                    singleLine = true
-                            )
-                        }
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = useSsl, onCheckedChange = { useSsl = it })
-                            Text("Use SSL/TLS", color = colors.foreground)
-                        }
-
-                        if (useSsl) {
-                            Row(
-                                    modifier = Modifier.fillMaxWidth().padding(start = 32.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                            "Accept Self-Signed Certificates",
-                                            color = colors.foreground
-                                    )
-                                    Text(
-                                            "Less secure - only for trusted servers",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = colors.orange.copy(alpha = 0.7f)
-                                    )
-                                }
-                                Checkbox(
-                                        checked = acceptSelfSignedCerts,
-                                        onCheckedChange = { acceptSelfSignedCerts = it }
-                                )
-                            }
-                        }
-
-                        OutlinedTextField(
-                                value = serverPassword,
-                                onValueChange = { serverPassword = it },
-                                label = { Text("Server Password (optional)") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                visualTransformation = PasswordVisualTransformation()
-                        )
-
-                        HorizontalDivider(color = colors.border)
-
-                        OutlinedTextField(
-                                value = nickname,
-                                onValueChange = { nickname = it },
-                                label = { Text("Nickname") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                        )
-
-                        OutlinedTextField(
-                                value = altNickname,
-                                onValueChange = { altNickname = it },
-                                label = { Text("Alternative Nickname") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                        )
-
-                        OutlinedTextField(
-                                value = username,
-                                onValueChange = { username = it },
-                                label = { Text("Username") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                        )
-
-                        OutlinedTextField(
-                                value = realName,
-                                onValueChange = { realName = it },
-                                label = { Text("Real Name") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                        )
-
-                        OutlinedTextField(
-                                value = nickServPassword,
-                                onValueChange = { nickServPassword = it },
-                                label = { Text("NickServ Password (optional)") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                visualTransformation = PasswordVisualTransformation(),
-                                supportingText = {
-                                    Text(
-                                            "Auto-identify with NickServ on connect",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = colors.comment
-                                    )
-                                }
-                        )
-
-                        HorizontalDivider(color = colors.border)
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = useSasl, onCheckedChange = { useSasl = it })
-                            Text("Use SASL Authentication", color = colors.foreground)
-                        }
-
-                        if (useSasl) {
-                            OutlinedTextField(
-                                    value = saslUsername,
-                                    onValueChange = { saslUsername = it },
-                                    label = { Text("SASL Username") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true
-                            )
-                            OutlinedTextField(
-                                    value = saslPassword,
-                                    onValueChange = { saslPassword = it },
-                                    label = { Text("SASL Password") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    visualTransformation = PasswordVisualTransformation()
-                            )
-                        }
-
-                        HorizontalDivider(color = colors.border)
-
-                        OutlinedTextField(
-                                value = autoJoinChannels,
-                                onValueChange = { autoJoinChannels = it },
-                                label = { Text("Auto-join Channels") },
-                                placeholder = { Text("#channel1, #channel2") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                supportingText = {
-                                    Text(
-                                            "Channels to join automatically after connecting",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = colors.comment
-                                    )
-                                }
-                        )
-
-                        OutlinedTextField(
-                                value = onConnectCommands,
-                                onValueChange = { onConnectCommands = it },
-                                label = { Text("Commands on Connect") },
-                                placeholder = { Text("/msg NickServ IDENTIFY password") },
-                                modifier = Modifier.fillMaxWidth(),
-                                maxLines = 5,
-                                supportingText = {
-                                    Text(
-                                            "IRC commands to execute after connecting (one per line)",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = colors.comment
-                                    )
-                                }
-                        )
-
-                        HorizontalDivider(color = colors.border)
-
-                        Text(
-                                "Proxy Settings",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = colors.cyan
-                        )
-
+                        // Server Type Dropdown
                         Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Proxy Type", color = colors.foreground)
+                            Text("Server Type", color = colors.foreground)
                             Box {
                                 var expanded by remember { mutableStateOf(false) }
                                 TextButton(onClick = { expanded = true }) {
-                                    Text(proxyType.name, color = colors.cyan)
+                                    Text(serverType.name, color = colors.cyan)
                                     Icon(Icons.Default.ArrowDropDown, null, tint = colors.cyan)
                                 }
                                 DropdownMenu(
@@ -1314,13 +1165,13 @@ private fun AddServerDialog(onDismiss: () -> Unit, onConnect: (ServerConfig) -> 
                                         onDismissRequest = { expanded = false },
                                         containerColor = colors.windowBackground
                                 ) {
-                                    ProxyType.entries.forEach { type ->
+                                    ServerType.entries.forEach { type ->
                                         DropdownMenuItem(
                                                 text = {
                                                     Text(type.name, color = colors.foreground)
                                                 },
                                                 onClick = {
-                                                    proxyType = type
+                                                    serverType = type
                                                     expanded = false
                                                 }
                                         )
@@ -1329,43 +1180,325 @@ private fun AddServerDialog(onDismiss: () -> Unit, onConnect: (ServerConfig) -> 
                             }
                         }
 
-                        if (proxyType != ProxyType.NONE) {
+                        if (serverType == ServerType.MATRIX) {
+                            OutlinedTextField(
+                                    value = matrixHomeserver,
+                                    onValueChange = { matrixHomeserver = it },
+                                    label = { Text("Homeserver URL") },
+                                    placeholder = { Text("matrix.org") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    supportingText = {
+                                        Text(
+                                                "e.g., matrix.org (https:// is added automatically)",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = colors.comment
+                                        )
+                                    }
+                            )
+
+                            OutlinedTextField(
+                                    value = username,
+                                    onValueChange = { username = it },
+                                    label = { Text("Username (Matrix User ID)") },
+                                    placeholder = { Text("@yourname:matrix.org") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    supportingText = {
+                                        Text(
+                                                "Your full Matrix ID including the server",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = colors.comment
+                                        )
+                                    }
+                            )
+
+                            OutlinedTextField(
+                                    value = matrixAccessToken,
+                                    onValueChange = { matrixAccessToken = it },
+                                    label = { Text("Password") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    supportingText = {
+                                        Text(
+                                                "If you use Google Login, please set a password in Element (Settings → General → Password)",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = colors.comment
+                                        )
+                                    }
+                            )
+
+                            OutlinedTextField(
+                                    value = nickname,
+                                    onValueChange = { nickname = it },
+                                    label = { Text("Display Name (Optional)") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                    value = autoJoinChannels,
+                                    onValueChange = { autoJoinChannels = it },
+                                    label = { Text("Auto-join Rooms") },
+                                    placeholder = { Text("#room:matrix.org") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    supportingText = {
+                                        Text(
+                                                "Room aliases to join after connecting",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = colors.comment
+                                        )
+                                    }
+                            )
+                        } else {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedTextField(
-                                        value = proxyHost,
-                                        onValueChange = { proxyHost = it },
-                                        label = { Text("Proxy Host") },
+                                        value = hostname,
+                                        onValueChange = { hostname = it },
+                                        label = { Text("Hostname") },
+                                        placeholder = { Text("irc.libera.chat") },
                                         modifier = Modifier.weight(1f),
                                         singleLine = true
                                 )
                                 OutlinedTextField(
-                                        value = proxyPort,
-                                        onValueChange = {
-                                            proxyPort = it.filter { c -> c.isDigit() }
-                                        },
+                                        value = port,
+                                        onValueChange = { port = it.filter { c -> c.isDigit() } },
                                         label = { Text("Port") },
                                         modifier = Modifier.width(100.dp),
                                         singleLine = true
                                 )
                             }
 
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = useSsl, onCheckedChange = { useSsl = it })
+                                Text("Use SSL/TLS", color = colors.foreground)
+                            }
+
+                            if (useSsl) {
+                                Row(
+                                        modifier = Modifier.fillMaxWidth().padding(start = 32.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                                "Accept Self-Signed Certificates",
+                                                color = colors.foreground
+                                        )
+                                        Text(
+                                                "Less secure - only for trusted servers",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = colors.orange.copy(alpha = 0.7f)
+                                        )
+                                    }
+                                    Checkbox(
+                                            checked = acceptSelfSignedCerts,
+                                            onCheckedChange = { acceptSelfSignedCerts = it }
+                                    )
+                                }
+                            }
+
                             OutlinedTextField(
-                                    value = proxyUsername,
-                                    onValueChange = { proxyUsername = it },
-                                    label = { Text("Proxy Username (Optional)") },
+                                    value = serverPassword,
+                                    onValueChange = { serverPassword = it },
+                                    label = { Text("Server Password (optional)") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation()
+                            )
+
+                            HorizontalDivider(color = colors.border)
+
+                            OutlinedTextField(
+                                    value = nickname,
+                                    onValueChange = { nickname = it },
+                                    label = { Text("Nickname") },
                                     modifier = Modifier.fillMaxWidth(),
                                     singleLine = true
                             )
 
                             OutlinedTextField(
-                                    value = proxyPassword,
-                                    onValueChange = { proxyPassword = it },
-                                    label = { Text("Proxy Password (Optional)") },
+                                    value = altNickname,
+                                    onValueChange = { altNickname = it },
+                                    label = { Text("Alternative Nickname") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                    value = username,
+                                    onValueChange = { username = it },
+                                    label = { Text("Username") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                    value = realName,
+                                    onValueChange = { realName = it },
+                                    label = { Text("Real Name") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                    value = nickServPassword,
+                                    onValueChange = { nickServPassword = it },
+                                    label = { Text("NickServ Password (optional)") },
                                     modifier = Modifier.fillMaxWidth(),
                                     singleLine = true,
-                                    visualTransformation = PasswordVisualTransformation()
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    supportingText = {
+                                        Text(
+                                                "Auto-identify with NickServ on connect",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = colors.comment
+                                        )
+                                    }
                             )
+
+                            HorizontalDivider(color = colors.border)
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = useSasl, onCheckedChange = { useSasl = it })
+                                Text("Use SASL Authentication", color = colors.foreground)
+                            }
+
+                            if (useSasl) {
+                                OutlinedTextField(
+                                        value = saslUsername,
+                                        onValueChange = { saslUsername = it },
+                                        label = { Text("SASL Username") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true
+                                )
+                                OutlinedTextField(
+                                        value = saslPassword,
+                                        onValueChange = { saslPassword = it },
+                                        label = { Text("SASL Password") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        visualTransformation = PasswordVisualTransformation()
+                                )
+                            }
                         }
+
+                        // IRC-only settings (hide for Matrix)
+                        if (serverType != ServerType.MATRIX) {
+                            HorizontalDivider(color = colors.border)
+
+                            OutlinedTextField(
+                                    value = autoJoinChannels,
+                                    onValueChange = { autoJoinChannels = it },
+                                    label = { Text("Auto-join Channels") },
+                                    placeholder = { Text("#channel1, #channel2") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    supportingText = {
+                                        Text(
+                                                "Channels to join automatically after connecting",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = colors.comment
+                                        )
+                                    }
+                            )
+
+                            OutlinedTextField(
+                                    value = onConnectCommands,
+                                    onValueChange = { onConnectCommands = it },
+                                    label = { Text("Commands on Connect") },
+                                    placeholder = { Text("/msg NickServ IDENTIFY password") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    maxLines = 5,
+                                    supportingText = {
+                                        Text(
+                                                "IRC commands to execute after connecting (one per line)",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = colors.comment
+                                        )
+                                    }
+                            )
+
+                            HorizontalDivider(color = colors.border)
+
+                            Text(
+                                    "Proxy Settings",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = colors.cyan
+                            )
+
+                            Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Proxy Type", color = colors.foreground)
+                                Box {
+                                    var expanded by remember { mutableStateOf(false) }
+                                    TextButton(onClick = { expanded = true }) {
+                                        Text(proxyType.name, color = colors.cyan)
+                                        Icon(Icons.Default.ArrowDropDown, null, tint = colors.cyan)
+                                    }
+                                    DropdownMenu(
+                                            expanded = expanded,
+                                            onDismissRequest = { expanded = false },
+                                            containerColor = colors.windowBackground
+                                    ) {
+                                        ProxyType.entries.forEach { type ->
+                                            DropdownMenuItem(
+                                                    text = {
+                                                        Text(type.name, color = colors.foreground)
+                                                    },
+                                                    onClick = {
+                                                        proxyType = type
+                                                        expanded = false
+                                                    }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (proxyType != ProxyType.NONE) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedTextField(
+                                            value = proxyHost,
+                                            onValueChange = { proxyHost = it },
+                                            label = { Text("Proxy Host") },
+                                            modifier = Modifier.weight(1f),
+                                            singleLine = true
+                                    )
+                                    OutlinedTextField(
+                                            value = proxyPort,
+                                            onValueChange = {
+                                                proxyPort = it.filter { c -> c.isDigit() }
+                                            },
+                                            label = { Text("Port") },
+                                            modifier = Modifier.width(100.dp),
+                                            singleLine = true
+                                    )
+                                }
+
+                                OutlinedTextField(
+                                        value = proxyUsername,
+                                        onValueChange = { proxyUsername = it },
+                                        label = { Text("Proxy Username (Optional)") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true
+                                )
+
+                                OutlinedTextField(
+                                        value = proxyPassword,
+                                        onValueChange = { proxyPassword = it },
+                                        label = { Text("Proxy Password (Optional)") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        visualTransformation = PasswordVisualTransformation()
+                                )
+                            }
+                        } // End IRC-only settings
                     }
                     CustomVerticalScrollbar(
                             scrollState = scrollState,
@@ -1377,15 +1510,33 @@ private fun AddServerDialog(onDismiss: () -> Unit, onConnect: (ServerConfig) -> 
                 Button(
                         onClick = {
                             if (hostname.isNotBlank() &&
-                                            nickname.isNotBlank() &&
-                                            altNickname.isNotBlank() &&
-                                            username.isNotBlank() &&
-                                            realName.isNotBlank()
+                                            nickname.isNotBlank() && // Check logic logic below
+                                            username.isNotBlank()
                             ) {
+                                // Logic handled in onClick
+                            }
+
+                            val isValid =
+                                    if (serverType == ServerType.MATRIX) {
+                                        matrixHomeserver.isNotBlank() &&
+                                                matrixAccessToken.isNotBlank() &&
+                                                username.isNotBlank()
+                                    } else {
+                                        hostname.isNotBlank() &&
+                                                nickname.isNotBlank() &&
+                                                username.isNotBlank()
+                                    }
+
+                            if (isValid) {
                                 val config =
                                         ServerConfig(
                                                 id = System.currentTimeMillis(),
-                                                serverName = serverName.ifBlank { hostname },
+                                                serverName =
+                                                        serverName.ifBlank {
+                                                            if (serverType == ServerType.MATRIX)
+                                                                    matrixHomeserver
+                                                            else hostname
+                                                        },
                                                 hostname = hostname,
                                                 port = port.toIntOrNull() ?: 6697,
                                                 useSsl = useSsl,
@@ -1410,17 +1561,28 @@ private fun AddServerDialog(onDismiss: () -> Unit, onConnect: (ServerConfig) -> 
                                                 proxyHost = proxyHost,
                                                 proxyPort = proxyPort.toIntOrNull() ?: 1080,
                                                 proxyUsername = proxyUsername.ifBlank { null },
-                                                proxyPassword = proxyPassword.ifBlank { null }
+                                                proxyPassword = proxyPassword.ifBlank { null },
+                                                type = serverType,
+                                                matrixHomeserver =
+                                                        matrixHomeserver.ifBlank { null },
+                                                matrixAccessToken =
+                                                        matrixAccessToken.ifBlank { null }
                                         )
                                 onConnect(config)
                             }
                         },
                         enabled =
-                                hostname.isNotBlank() &&
-                                        nickname.isNotBlank() &&
-                                        altNickname.isNotBlank() &&
-                                        username.isNotBlank() &&
-                                        realName.isNotBlank(),
+                                if (serverType == ServerType.MATRIX) {
+                                    matrixHomeserver.isNotBlank() &&
+                                            matrixAccessToken.isNotBlank() &&
+                                            username.isNotBlank()
+                                } else {
+                                    hostname.isNotBlank() &&
+                                            nickname.isNotBlank() &&
+                                            altNickname.isNotBlank() &&
+                                            username.isNotBlank() &&
+                                            realName.isNotBlank()
+                                },
                         colors = ButtonDefaults.buttonColors(containerColor = colors.green)
                 ) { Text("Connect") }
             },
@@ -1491,6 +1653,8 @@ private fun SettingsDialog(
         onSoundOnHighlightChange: (Boolean) -> Unit, // Added missing param
         onLoggingEnabledChange: (Boolean) -> Unit,
         onHistoryReplayLinesChange: (Int) -> Unit,
+        onProcessLinkPreviewsFromOthersChange: (Boolean) -> Unit,
+        onUseProxyForPreviewsChange: (Boolean) -> Unit,
         onDismiss: () -> Unit
 ) {
     val colors = AppColors.current
@@ -1747,6 +1911,58 @@ private fun SettingsDialog(
                                     )
                                 }
                             }
+                        }
+
+                        // Process Link Previews From Others
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Process Previews from Others", color = colors.foreground)
+                                Text(
+                                        "Automatically load previews for links sent by other users",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colors.comment
+                                )
+                            }
+                            Switch(
+                                    checked = userPreferences.processLinkPreviewsFromOthers,
+                                    onCheckedChange = onProcessLinkPreviewsFromOthersChange,
+                                    colors =
+                                            SwitchDefaults.colors(
+                                                    checkedThumbColor = colors.green,
+                                                    checkedTrackColor =
+                                                            colors.green.copy(alpha = 0.5f)
+                                            )
+                            )
+                        }
+
+                        // Use Proxy for Previews
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Use Proxy for Previews", color = colors.foreground)
+                                Text(
+                                        "Route preview requests through server proxy (keeps IP hidden)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colors.comment
+                                )
+                            }
+                            Switch(
+                                    checked = userPreferences.useProxyForPreviews,
+                                    onCheckedChange = onUseProxyForPreviewsChange,
+                                    colors =
+                                            SwitchDefaults.colors(
+                                                    checkedThumbColor = colors.green,
+                                                    checkedTrackColor =
+                                                            colors.green.copy(alpha = 0.5f)
+                                            )
+                            )
                         }
 
                         // Split View
@@ -2197,6 +2413,9 @@ private fun EditServerDialog(
 ) {
     val colors = AppColors.current
 
+    var matrixHomeserver by remember { mutableStateOf(config.matrixHomeserver ?: "") }
+    var matrixAccessToken by remember { mutableStateOf(config.matrixAccessToken ?: "") }
+
     var serverName by remember { mutableStateOf(config.serverName) }
     var hostname by remember { mutableStateOf(config.hostname) }
     var port by remember { mutableStateOf(config.port.toString()) }
@@ -2238,140 +2457,181 @@ private fun EditServerDialog(
                                 value = serverName,
                                 onValueChange = { serverName = it },
                                 label = { Text("Server Name") },
-                                placeholder = { Text("e.g., Libera Chat") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                        )
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                    value = hostname,
-                                    onValueChange = { hostname = it },
-                                    label = { Text("Hostname") },
-                                    placeholder = { Text("irc.libera.chat") },
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true
-                            )
-                            OutlinedTextField(
-                                    value = port,
-                                    onValueChange = { port = it.filter { c -> c.isDigit() } },
-                                    label = { Text("Port") },
-                                    modifier = Modifier.width(100.dp),
-                                    singleLine = true
-                            )
-                        }
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = useSsl, onCheckedChange = { useSsl = it })
-                            Text("Use SSL/TLS", color = colors.foreground)
-                        }
-
-                        if (useSsl) {
-                            Row(
-                                    modifier = Modifier.fillMaxWidth().padding(start = 32.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
+                                placeholder = {
                                     Text(
-                                            "Accept Self-Signed Certificates",
-                                            color = colors.foreground
+                                            if (config.type == ServerType.MATRIX) "e.g., Matrix"
+                                            else "e.g., Libera Chat"
                                     )
-                                    Text(
-                                            "Less secure - only for trusted servers",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = colors.orange.copy(alpha = 0.7f)
-                                    )
-                                }
-                                Checkbox(
-                                        checked = acceptSelfSignedCerts,
-                                        onCheckedChange = { acceptSelfSignedCerts = it }
-                                )
-                            }
-                        }
-
-                        OutlinedTextField(
-                                value = serverPassword,
-                                onValueChange = { serverPassword = it },
-                                label = { Text("Server Password (optional)") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                visualTransformation = PasswordVisualTransformation()
-                        )
-
-                        HorizontalDivider(color = colors.border)
-
-                        OutlinedTextField(
-                                value = nickname,
-                                onValueChange = { nickname = it },
-                                label = { Text("Nickname") },
+                                },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true
                         )
 
-                        OutlinedTextField(
-                                value = altNickname,
-                                onValueChange = { altNickname = it },
-                                label = { Text("Alternative Nickname") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                        )
-
-                        OutlinedTextField(
-                                value = username,
-                                onValueChange = { username = it },
-                                label = { Text("Username") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                        )
-
-                        OutlinedTextField(
-                                value = realName,
-                                onValueChange = { realName = it },
-                                label = { Text("Real Name") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                        )
-
-                        OutlinedTextField(
-                                value = nickServPassword,
-                                onValueChange = { nickServPassword = it },
-                                label = { Text("NickServ Password (optional)") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                visualTransformation = PasswordVisualTransformation(),
-                                supportingText = {
-                                    Text(
-                                            "Auto-identify with NickServ on connect",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = colors.comment
-                                    )
-                                }
-                        )
-
-                        HorizontalDivider(color = colors.border)
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = useSasl, onCheckedChange = { useSasl = it })
-                            Text("Use SASL Authentication", color = colors.foreground)
-                        }
-
-                        if (useSasl) {
+                        if (config.type == ServerType.MATRIX) {
                             OutlinedTextField(
-                                    value = saslUsername,
-                                    onValueChange = { saslUsername = it },
-                                    label = { Text("SASL Username") },
+                                    value = matrixHomeserver,
+                                    onValueChange = { matrixHomeserver = it },
+                                    label = { Text("Homeserver URL") },
+                                    placeholder = { Text("https://matrix.org") },
                                     modifier = Modifier.fillMaxWidth(),
                                     singleLine = true
                             )
+
                             OutlinedTextField(
-                                    value = saslPassword,
-                                    onValueChange = { saslPassword = it },
-                                    label = { Text("SASL Password") },
+                                    value = matrixAccessToken,
+                                    onValueChange = { matrixAccessToken = it },
+                                    label = { Text("Password") },
                                     modifier = Modifier.fillMaxWidth(),
                                     singleLine = true,
                                     visualTransformation = PasswordVisualTransformation()
                             )
+
+                            OutlinedTextField(
+                                    value = username,
+                                    onValueChange = { username = it },
+                                    label = { Text("Username (@user:domain)") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                    value = nickname,
+                                    onValueChange = { nickname = it },
+                                    label = { Text("Display Name (Optional)") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                            )
+                        } else {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                        value = hostname,
+                                        onValueChange = { hostname = it },
+                                        label = { Text("Hostname") },
+                                        placeholder = { Text("irc.libera.chat") },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true
+                                )
+                                OutlinedTextField(
+                                        value = port,
+                                        onValueChange = { port = it.filter { c -> c.isDigit() } },
+                                        label = { Text("Port") },
+                                        modifier = Modifier.width(100.dp),
+                                        singleLine = true
+                                )
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = useSsl, onCheckedChange = { useSsl = it })
+                                Text("Use SSL/TLS", color = colors.foreground)
+                            }
+
+                            if (useSsl) {
+                                Row(
+                                        modifier = Modifier.fillMaxWidth().padding(start = 32.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                                "Accept Self-Signed Certificates",
+                                                color = colors.foreground
+                                        )
+                                        Text(
+                                                "Less secure - only for trusted servers",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = colors.orange.copy(alpha = 0.7f)
+                                        )
+                                    }
+                                    Checkbox(
+                                            checked = acceptSelfSignedCerts,
+                                            onCheckedChange = { acceptSelfSignedCerts = it }
+                                    )
+                                }
+                            }
+
+                            OutlinedTextField(
+                                    value = serverPassword,
+                                    onValueChange = { serverPassword = it },
+                                    label = { Text("Server Password (optional)") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation()
+                            )
+
+                            HorizontalDivider(color = colors.border)
+
+                            OutlinedTextField(
+                                    value = nickname,
+                                    onValueChange = { nickname = it },
+                                    label = { Text("Nickname") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                    value = altNickname,
+                                    onValueChange = { altNickname = it },
+                                    label = { Text("Alternative Nickname") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                    value = username,
+                                    onValueChange = { username = it },
+                                    label = { Text("Username") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                    value = realName,
+                                    onValueChange = { realName = it },
+                                    label = { Text("Real Name") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                            )
+
+                            OutlinedTextField(
+                                    value = nickServPassword,
+                                    onValueChange = { nickServPassword = it },
+                                    label = { Text("NickServ Password (optional)") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    supportingText = {
+                                        Text(
+                                                "Auto-identify with NickServ on connect",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = colors.comment
+                                        )
+                                    }
+                            )
+
+                            HorizontalDivider(color = colors.border)
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = useSasl, onCheckedChange = { useSasl = it })
+                                Text("Use SASL Authentication", color = colors.foreground)
+                            }
+
+                            if (useSasl) {
+                                OutlinedTextField(
+                                        value = saslUsername,
+                                        onValueChange = { saslUsername = it },
+                                        label = { Text("SASL Username") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true
+                                )
+                                OutlinedTextField(
+                                        value = saslPassword,
+                                        onValueChange = { saslPassword = it },
+                                        label = { Text("SASL Password") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        visualTransformation = PasswordVisualTransformation()
+                                )
+                            }
                         }
 
                         HorizontalDivider(color = colors.border)
@@ -2495,16 +2755,29 @@ private fun EditServerDialog(
             confirmButton = {
                 Button(
                         onClick = {
-                            if (hostname.isNotBlank() &&
-                                            nickname.isNotBlank() &&
-                                            altNickname.isNotBlank() &&
-                                            username.isNotBlank() &&
-                                            realName.isNotBlank()
-                            ) {
+                            val isValid =
+                                    if (config.type == ServerType.MATRIX) {
+                                        matrixHomeserver.isNotBlank() &&
+                                                matrixAccessToken.isNotBlank() &&
+                                                username.isNotBlank()
+                                    } else {
+                                        hostname.isNotBlank() &&
+                                                nickname.isNotBlank() &&
+                                                altNickname.isNotBlank() &&
+                                                username.isNotBlank() &&
+                                                realName.isNotBlank()
+                                    }
+
+                            if (isValid) {
                                 val updatedConfig =
                                         ServerConfig(
                                                 id = config.id,
-                                                serverName = serverName.ifBlank { hostname },
+                                                serverName =
+                                                        serverName.ifBlank {
+                                                            if (config.type == ServerType.MATRIX)
+                                                                    matrixHomeserver
+                                                            else hostname
+                                                        },
                                                 hostname = hostname,
                                                 port = port.toIntOrNull() ?: 6697,
                                                 useSsl = useSsl,
@@ -2529,17 +2802,28 @@ private fun EditServerDialog(
                                                 proxyHost = proxyHost,
                                                 proxyPort = proxyPort.toIntOrNull() ?: 1080,
                                                 proxyUsername = proxyUsername.ifBlank { null },
-                                                proxyPassword = proxyPassword.ifBlank { null }
+                                                proxyPassword = proxyPassword.ifBlank { null },
+                                                type = config.type,
+                                                matrixHomeserver =
+                                                        matrixHomeserver.ifBlank { null },
+                                                matrixAccessToken =
+                                                        matrixAccessToken.ifBlank { null }
                                         )
                                 onSave(updatedConfig, true)
                             }
                         },
                         enabled =
-                                hostname.isNotBlank() &&
-                                        nickname.isNotBlank() &&
-                                        altNickname.isNotBlank() &&
-                                        username.isNotBlank() &&
-                                        realName.isNotBlank(),
+                                if (config.type == ServerType.MATRIX) {
+                                    matrixHomeserver.isNotBlank() &&
+                                            matrixAccessToken.isNotBlank() &&
+                                            username.isNotBlank()
+                                } else {
+                                    hostname.isNotBlank() &&
+                                            nickname.isNotBlank() &&
+                                            altNickname.isNotBlank() &&
+                                            username.isNotBlank() &&
+                                            realName.isNotBlank()
+                                },
                         colors = ButtonDefaults.buttonColors(containerColor = colors.green)
                 ) { Text("Save & Reconnect") }
             },
@@ -2548,16 +2832,30 @@ private fun EditServerDialog(
                     TextButton(onClick = onDismiss) { Text("Cancel", color = colors.comment) }
                     TextButton(
                             onClick = {
-                                if (hostname.isNotBlank() &&
-                                                nickname.isNotBlank() &&
-                                                altNickname.isNotBlank() &&
-                                                username.isNotBlank() &&
-                                                realName.isNotBlank()
-                                ) {
+                                val isValid =
+                                        if (config.type == ServerType.MATRIX) {
+                                            matrixHomeserver.isNotBlank() &&
+                                                    matrixAccessToken.isNotBlank() &&
+                                                    username.isNotBlank()
+                                        } else {
+                                            hostname.isNotBlank() &&
+                                                    nickname.isNotBlank() &&
+                                                    altNickname.isNotBlank() &&
+                                                    username.isNotBlank() &&
+                                                    realName.isNotBlank()
+                                        }
+
+                                if (isValid) {
                                     val updatedConfig =
                                             ServerConfig(
                                                     id = config.id,
-                                                    serverName = serverName.ifBlank { hostname },
+                                                    serverName =
+                                                            serverName.ifBlank {
+                                                                if (config.type == ServerType.MATRIX
+                                                                )
+                                                                        matrixHomeserver
+                                                                else hostname
+                                                            },
                                                     hostname = hostname,
                                                     port = port.toIntOrNull() ?: 6697,
                                                     useSsl = useSsl,
@@ -2585,17 +2883,28 @@ private fun EditServerDialog(
                                                     proxyHost = proxyHost,
                                                     proxyPort = proxyPort.toIntOrNull() ?: 1080,
                                                     proxyUsername = proxyUsername.ifBlank { null },
-                                                    proxyPassword = proxyPassword.ifBlank { null }
+                                                    proxyPassword = proxyPassword.ifBlank { null },
+                                                    type = config.type,
+                                                    matrixHomeserver =
+                                                            matrixHomeserver.ifBlank { null },
+                                                    matrixAccessToken =
+                                                            matrixAccessToken.ifBlank { null }
                                             )
                                     onSave(updatedConfig, false)
                                 }
                             },
                             enabled =
-                                    hostname.isNotBlank() &&
-                                            nickname.isNotBlank() &&
-                                            altNickname.isNotBlank() &&
-                                            username.isNotBlank() &&
-                                            realName.isNotBlank()
+                                    if (config.type == ServerType.MATRIX) {
+                                        matrixHomeserver.isNotBlank() &&
+                                                matrixAccessToken.isNotBlank() &&
+                                                username.isNotBlank()
+                                    } else {
+                                        hostname.isNotBlank() &&
+                                                nickname.isNotBlank() &&
+                                                altNickname.isNotBlank() &&
+                                                username.isNotBlank() &&
+                                                realName.isNotBlank()
+                                    }
                     ) { Text("Save Only", color = colors.cyan) }
                 }
             }

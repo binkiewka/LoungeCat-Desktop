@@ -22,6 +22,7 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kitteh.irc)
+                implementation(libs.trixnity.client)
                 implementation(libs.jsoup)
                 implementation(libs.coil.compose)
                 implementation(libs.coil.network.okhttp)
@@ -44,6 +45,7 @@ kotlin {
                 implementation(libs.languagetool.de)
                 implementation(libs.languagetool.nl)
                 implementation(libs.languagetool.pl)
+                implementation(libs.ktor.client.okhttp)
             }
         }
 

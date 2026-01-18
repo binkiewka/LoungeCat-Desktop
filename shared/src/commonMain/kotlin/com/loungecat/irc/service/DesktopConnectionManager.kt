@@ -2,6 +2,7 @@ package com.loungecat.irc.service
 
 import com.loungecat.irc.data.model.*
 import com.loungecat.irc.data.model.MessageType
+import com.loungecat.irc.network.ChatClient
 import com.loungecat.irc.network.IrcClient
 import com.loungecat.irc.util.HighlightMatcher
 import com.loungecat.irc.util.ImageUrlDetector
@@ -110,6 +111,14 @@ class DesktopConnectionManager {
 
     fun setHistoryReplayLines(lines: Int) {
         updatePreference { it.copy(historyReplayLines = lines) }
+    }
+
+    fun setProcessLinkPreviewsFromOthers(enabled: Boolean) {
+        updatePreference { it.copy(processLinkPreviewsFromOthers = enabled) }
+    }
+
+    fun setUseProxyForPreviews(enabled: Boolean) {
+        updatePreference { it.copy(useProxyForPreviews = enabled) }
     }
 
     fun setSmartHideMinutes(minutes: Int) {
@@ -423,7 +432,17 @@ class DesktopConnectionManager {
 
                     updateConnectionState(configToUse.id, ConnectionState.Connecting)
 
-                    val client = IrcClient(configToUse, configToUse.id, managerScope)
+                    val client: ChatClient =
+                            if (configToUse.type == ServerType.MATRIX) {
+                                com.loungecat.irc.network.MatrixClient(
+                                        configToUse,
+                                        configToUse.id,
+                                        managerScope
+                                )
+                            } else {
+                                IrcClient(configToUse, configToUse.id, managerScope)
+                            }
+
                     val connection =
                             ServerConnection(
                                     serverId = configToUse.id,
@@ -551,7 +570,7 @@ class DesktopConnectionManager {
     }
 
     fun disconnectAll() {
-        connections.values.forEach { it.client.disconnect() }
+        managerScope.launch { connections.values.forEach { it.client.disconnect() } }
         _connections.value = emptyMap()
         _currentServerId.value = null
         _connectionState.value = ConnectionState.Disconnected
@@ -931,7 +950,7 @@ class DesktopConnectionManager {
                             // Process URLs for previews in cached messages
                             displayedMessages.forEach { msg ->
                                 if (msg.type == MessageType.NORMAL) {
-                                    processMessageUrls(msg)
+                                    processMessageUrls(serverId, msg)
                                 }
                             }
                             connection.messages + (channelName to displayedMessages)
@@ -1050,7 +1069,7 @@ class DesktopConnectionManager {
             // Process URLs for previews in older messages
             olderMessages.forEach { msg ->
                 if (msg.type == MessageType.NORMAL) {
-                    processMessageUrls(msg)
+                    processMessageUrls(serverId, msg)
                 }
             }
 
@@ -1078,7 +1097,7 @@ class DesktopConnectionManager {
         managerScope.cancel()
     }
 
-    private fun setupClientListeners(serverId: Long, client: IrcClient): List<Job> {
+    private fun setupClientListeners(serverId: Long, client: ChatClient): List<Job> {
         val jobs = mutableListOf<Job>()
 
         jobs.add(
@@ -1320,7 +1339,7 @@ class DesktopConnectionManager {
                 userActivityTracker.recordActivity(message.target, message.sender)
             }
             if (message.type == MessageType.NORMAL) {
-                processMessageUrls(message)
+                processMessageUrls(serverId, message)
             }
         }
 
@@ -1360,7 +1379,29 @@ class DesktopConnectionManager {
         }
     }
 
-    private fun processMessageUrls(message: IncomingMessage) {
+    private fun getProxyForServer(serverId: Long): java.net.Proxy? {
+        val config = connections[serverId]?.config ?: return null
+        if (config.proxyType == ProxyType.NONE) return null
+
+        return try {
+            val type =
+                    when (config.proxyType) {
+                        ProxyType.HTTP -> java.net.Proxy.Type.HTTP
+                        ProxyType.SOCKS -> java.net.Proxy.Type.SOCKS
+                        else -> java.net.Proxy.Type.DIRECT
+                    }
+            java.net.Proxy(type, java.net.InetSocketAddress(config.proxyHost, config.proxyPort))
+        } catch (e: Exception) {
+            Logger.error(
+                    "DesktopConnectionManager",
+                    "Failed to create proxy for server $serverId",
+                    e
+            )
+            null
+        }
+    }
+
+    private fun processMessageUrls(serverId: Long, message: IncomingMessage) {
         val urls = UrlExtractor.extractUrls(message.content)
         if (urls.isEmpty()) return
 
@@ -1375,20 +1416,143 @@ class DesktopConnectionManager {
             }
         }
 
-        if (detectedImages.isNotEmpty()) {
+        // CHECK SECURITY POLICY
+        val prefs = _userPreferences.value
+        val isTrusted = message.sender.lowercase() in prefs.trustedPreviewUsers
+        val shouldAutoFetch = message.isSelf || prefs.processLinkPreviewsFromOthers || isTrusted
+
+        if (detectedImages.isNotEmpty() && shouldAutoFetch) {
             _imageUrls.update { current -> current + (message.id to detectedImages) }
         }
 
-        urlsToPreview.forEach { url ->
+        if (!shouldAutoFetch) {
+            // Do not fetch previews. The UI will see the URL but no preview data,
+            // and should display a "Load Preview" button.
+            return
+        }
+
+        fetchPreviewsForUrls(message.id, urlsToPreview, serverId)
+    }
+
+    fun fetchPreviewForMessage(messageId: String) {
+        // Find the server and message for this ID
+        var foundServerId: Long? = null
+        var foundMessage: IncomingMessage? = null
+
+        // Efficiently search
+        for ((sId, conn) in connections) {
+            // We need to search effectively.
+            // Usually this is called from UI for visible message.
+            // We can search recent history.
+            // Assuming message is in cache.
+            // Accessing messages map safely?
+            // connections is ConcurrentHashMap.
+            val msgList = conn.messages.values.flatten() // Expensive?
+            // Just iterating channels might be better
+            for (channelMessages in conn.messages.values) {
+                val msg = channelMessages.find { it.id == messageId }
+                if (msg != null) {
+                    foundServerId = sId
+                    foundMessage = msg
+                    break
+                }
+            }
+            if (foundMessage != null) break
+        }
+
+        // Check current server if fail (fallback)
+        if (foundMessage == null) {
+            return
+        }
+
+        val urls = UrlExtractor.extractUrls(foundMessage.content)
+        // Filter out direct images if they are already handled by image loader,
+        // BUT the user clicked "Load Preview" so maybe they want the metadata card for the image
+        // too?
+        // Or if it failed to load?
+        // Actually, for "Click-to-Load", we want to force load everything that was skipped.
+        // If it's an image, we want to add it to _imageUrls.
+        // If it's a link, we want to add to _urlPreviews.
+
+        Logger.d("DesktopConnectionManager", "Found message. URLs: ${urls.size}")
+
+        val detectedImages = mutableListOf<String>()
+        val urlsToPreview = mutableListOf<String>()
+
+        urls.forEach { url ->
+            if (ImageUrlDetector.isImageUrl(url)) detectedImages.add(url)
+            else urlsToPreview.add(url)
+        }
+
+        if (detectedImages.isNotEmpty()) {
+            _imageUrls.update { current -> current + (messageId to detectedImages) }
+        }
+
+        if (urlsToPreview.isNotEmpty()) {
+            fetchPreviewsForUrls(messageId, urlsToPreview, foundServerId)
+        }
+        // This means images are Auto-Loaded regardless of preference?
+        // Coil loads them.
+        // THIS IS A SECURITY FLAV.
+        // I need to gate Image adding too!
+
+        // Returning to this task:
+        // Update fetchPreviewForMessage to handle finding message and fetching.
+
+        // Returning to this task:
+        // Update fetchPreviewForMessage to handle finding message and fetching.
+    }
+
+    private fun fetchPreviewsForUrls(
+            messageId: String,
+            urls: List<String>,
+            serverId: Long? = null
+    ) {
+        // If serverId is not provided, try to find it from the message ID (optimistic check)
+        // effectively done by caller usually.
+
+        // Determined proxy
+        val proxy =
+                if (serverId != null && _userPreferences.value.useProxyForPreviews) {
+                    getProxyForServer(serverId)
+                } else {
+                    // If we are currently connected to a server, try to use its proxy as a
+                    // fallback?
+                    // Or better: ensure we always pass serverId.
+                    // For auto-fetch (processMessageUrls), we are inside the context of a specific
+                    // server/connection update loop?
+                    // Actually processMessageUrls is called from updateMessages which has serverId.
+                    // Wait, processMessageUrls currently doesn't take serverId. I need to update
+                    // signature or logic.
+                    null
+                }
+
+        urls.forEach { url ->
             managerScope.launch {
-                val preview = urlPreviewService.fetchPreview(url)
+                val preview = urlPreviewService.fetchPreview(url, proxy)
                 _urlPreviews.update { current ->
-                    val existingPreviews = current[message.id] ?: emptyList()
+                    val existingPreviews = current[messageId] ?: emptyList()
+                    // Avoid duplicates
+                    if (existingPreviews.any { it.url == url }) return@update current
+
                     val newPreviews = existingPreviews + preview
-                    current + (message.id to newPreviews)
+                    current + (messageId to newPreviews)
                 }
             }
         }
+    }
+
+    // Adjusted processMessageUrls to use internal lookup or scope if possible.
+    // Since updateMessages has serverId, we should pass it down.
+
+    fun trustUserForPreviews(nickname: String) {
+        val lower = nickname.lowercase()
+        updatePreference { it.copy(trustedPreviewUsers = it.trustedPreviewUsers + lower) }
+    }
+
+    fun untrustUserForPreviews(nickname: String) {
+        val lower = nickname.lowercase()
+        updatePreference { it.copy(trustedPreviewUsers = it.trustedPreviewUsers - lower) }
     }
 
     private fun addSystemMessage(serverId: Long, channelName: String, content: String) {
@@ -1439,15 +1603,17 @@ class DesktopConnectionManager {
 data class ServerConnection(
         val serverId: Long,
         val config: ServerConfig,
-        val client: IrcClient,
+        val client: ChatClient,
         val connectionState: ConnectionState = ConnectionState.Disconnected,
         val channels: List<Channel> = emptyList(),
         val messages: Map<String, List<IncomingMessage>> = emptyMap(),
         val currentChannel: String? = null,
-        val reconnectAttempt: Int = 0,
-        val manuallyDisconnected: Boolean = false
+        val manuallyDisconnected: Boolean = false,
+        val reconnectAttempt: Int = 0
 ) {
-    fun isConnected(): Boolean = connectionState is ConnectionState.Connected
+    fun isConnected(): Boolean {
+        return connectionState is ConnectionState.Connected
+    }
     fun getUnreadCount(): Int = channels.sumOf { it.unreadCount }
 }
 

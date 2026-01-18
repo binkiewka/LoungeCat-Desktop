@@ -60,7 +60,7 @@ fun ChannelPane(
                 ) {
                         Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                        text = channelName,
+                                        text = channel?.displayName ?: channelName,
                                         style = MaterialTheme.typography.titleMedium,
                                         color = colors.foreground,
                                         fontWeight = FontWeight.Bold

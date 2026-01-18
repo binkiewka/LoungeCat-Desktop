@@ -2,6 +2,7 @@ package com.loungecat.irc.service
 
 import com.loungecat.irc.data.model.UrlPreview
 import com.loungecat.irc.util.Logger
+import java.net.Proxy
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,7 +19,7 @@ class LinkPreviewService {
     }
 
     /** Fetch preview metadata for a URL */
-    suspend fun fetchPreview(url: String): UrlPreview =
+    suspend fun fetchPreview(url: String, proxy: java.net.Proxy? = null): UrlPreview =
             withContext(Dispatchers.IO) {
                 try {
                     Logger.debug("LinkPreviewService", "Fetching preview for: $url")
@@ -40,40 +41,12 @@ class LinkPreviewService {
                                     .followRedirects(true)
                                     .ignoreContentType(true)
 
-                    // Execute the request
-                    val response = connection.execute()
-
-                    // Check content type
-                    val contentType = response.contentType()
-                    Logger.debug("LinkPreviewService", "Content-Type: $contentType")
-
-                    // If it's an image, create image-only preview
-                    if (contentType != null && contentType.startsWith("image/")) {
-                        Logger.debug(
-                                "LinkPreviewService",
-                                "Response is image content, creating image-only preview"
-                        )
-                        return@withContext createImageOnlyPreview(url)
+                    if (proxy != null) {
+                        connection.proxy(proxy)
                     }
 
-                    // If it's not HTML-like, return error
-                    if (contentType != null &&
-                                    !contentType.contains("text/") &&
-                                    !contentType.contains("html") &&
-                                    !contentType.contains("xml")
-                    ) {
-                        Logger.warn("LinkPreviewService", "Unsupported content type: $contentType")
-                        return@withContext UrlPreview(
-                                url = url,
-                                isLoading = false,
-                                error = "Unhandled content type: $contentType"
-                        )
-                    }
+                    val document = connection.get()
 
-                    // Parse as HTML document
-                    val document = response.parse()
-
-                    // Extract metadata
                     val title = extractTitle(document, url)
                     val description = extractDescription(document)
                     val imageUrl = extractImage(document, url)
@@ -86,48 +59,34 @@ class LinkPreviewService {
                             description = description,
                             imageUrl = imageUrl,
                             siteName = siteName,
-                            favicon = favicon,
-                            isLoading = false,
-                            error = null
+                            favicon = favicon
                     )
                 } catch (e: Exception) {
                     Logger.error("LinkPreviewService", "Error fetching preview for $url", e)
-                    UrlPreview(
-                            url = url,
-                            isLoading = false,
-                            error = e.message ?: "Failed to load preview"
-                    )
+                    UrlPreview(url = url, error = e.message)
                 }
             }
 
-    /** Check if URL is a direct image URL by file extension */
     private fun isDirectImageUrl(url: String): Boolean {
-        val imageExtensions = listOf(".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg")
-        val lowercaseUrl = url.lowercase()
-        return imageExtensions.any { lowercaseUrl.contains(it) }
+        val lowerUrl = url.lowercase()
+        return lowerUrl.endsWith(".jpg") ||
+                lowerUrl.endsWith(".jpeg") ||
+                lowerUrl.endsWith(".png") ||
+                lowerUrl.endsWith(".gif") ||
+                lowerUrl.endsWith(".webp") ||
+                lowerUrl.endsWith(".bmp")
     }
 
-    /** Create a preview for direct image URLs */
     private fun createImageOnlyPreview(url: String): UrlPreview {
-        val domain =
-                try {
-                    URL(url).host.removePrefix("www.")
-                } catch (e: Exception) {
-                    "Image"
-                }
-
         return UrlPreview(
                 url = url,
-                title = "Image",
+                title = url.substringAfterLast("/"),
                 description = null,
                 imageUrl = url,
-                siteName = domain,
-                favicon = null,
-                isLoading = false,
-                error = null
+                siteName = null,
+                favicon = null
         )
     }
-
     /** Extract title from document */
     private fun extractTitle(document: Document, url: String): String? {
         // Try Open Graph title

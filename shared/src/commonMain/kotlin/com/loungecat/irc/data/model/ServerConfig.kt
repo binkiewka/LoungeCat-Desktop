@@ -31,11 +31,21 @@ data class ServerConfig(
         val proxyHost: String = "",
         val proxyPort: Int = 1080,
         val proxyUsername: String? = null,
-        val proxyPassword: String? = null
+        val proxyPassword: String? = null,
+
+        // Server Type
+        val type: ServerType = ServerType.IRC,
+        val matrixHomeserver: String? = null,
+        val matrixAccessToken: String? = null
 )
 
 enum class ProxyType {
         NONE,
         HTTP,
         SOCKS
+}
+
+enum class ServerType {
+        IRC,
+        MATRIX
 }

@@ -21,25 +21,25 @@ import org.kitteh.irc.client.library.event.user.UserNickChangeEvent
 import org.kitteh.irc.client.library.event.user.UserQuitEvent
 
 class IrcClient(
-        private var config: ServerConfig,
-        private val serverId: Long,
+        override var config: ServerConfig,
+        override val serverId: Long,
         private val scope: CoroutineScope
-) {
+) : ChatClient {
     private var client: Client? = null
     private var eventListener: EventListener? = null
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Connecting)
-    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+    override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
     private val _messages = MutableSharedFlow<IncomingMessage>()
-    val messages: SharedFlow<IncomingMessage> = _messages.asSharedFlow()
+    override val messages: SharedFlow<IncomingMessage> = _messages.asSharedFlow()
 
     private val _channels = MutableStateFlow<Map<String, Channel>>(emptyMap())
-    val channels: StateFlow<Map<String, Channel>> = _channels.asStateFlow()
+    override val channels: StateFlow<Map<String, Channel>> = _channels.asStateFlow()
 
     // WHOIS cache: nickname (lowercase) -> formatted WHOIS info
     private val _whoisCache = MutableStateFlow<Map<String, String>>(emptyMap())
-    val whoisCache: StateFlow<Map<String, String>> = _whoisCache.asStateFlow()
+    override val whoisCache: StateFlow<Map<String, String>> = _whoisCache.asStateFlow()
 
     // Pending WHOIS: nickname (lowercase) -> list of info lines being collected
     private val pendingWhois = mutableMapOf<String, MutableList<String>>()
@@ -48,7 +48,7 @@ class IrcClient(
     private var hasConnectedBefore = false
     private val initialJoinChannels = mutableSetOf<String>()
 
-    suspend fun connect() {
+    override suspend fun connect() {
         try {
             Logger.d("IrcClient", "=== CONNECTION ATTEMPT START ===")
             Logger.d("IrcClient", "Server: ${config.hostname}:${config.port}")
@@ -234,11 +234,11 @@ class IrcClient(
         }
     }
 
-    fun updateConfig(newConfig: ServerConfig) {
+    override fun updateConfig(newConfig: ServerConfig) {
         this.config = newConfig
     }
 
-    fun disconnect() {
+    override suspend fun disconnect() {
         // Unregister event listener before shutdown to prevent ghost events
         eventListener?.let { listener -> client?.eventManager?.unregisterEventListener(listener) }
         eventListener = null
@@ -247,7 +247,7 @@ class IrcClient(
         _connectionState.value = ConnectionState.Disconnected
     }
 
-    suspend fun sendMessage(target: String, message: String) {
+    override suspend fun sendMessage(target: String, message: String) {
         client?.sendMessage(target, message)
 
         val isAction = message.startsWith("\u0001ACTION") && message.endsWith("\u0001")
@@ -270,23 +270,23 @@ class IrcClient(
         )
     }
 
-    suspend fun joinChannel(channelName: String) {
+    override suspend fun joinChannel(channelName: String) {
         client?.addChannel(channelName)
     }
 
-    suspend fun partChannel(channelName: String) {
+    override suspend fun partChannel(channelName: String) {
         client?.removeChannel(channelName)
     }
 
-    suspend fun sendRawCommand(command: String) {
+    override suspend fun sendRawCommand(command: String) {
         client?.sendRawLine(command)
     }
 
-    suspend fun closeQuery(nickname: String) {
+    override suspend fun closeQuery(nickname: String) {
         _channels.update { channels -> channels - nickname }
     }
 
-    suspend fun startQuery(nickname: String) {
+    override suspend fun startQuery(nickname: String) {
         _channels.update { channels ->
             if (!channels.containsKey(nickname)) {
                 channels + (nickname to Channel(name = nickname, type = ChannelType.QUERY))
@@ -296,7 +296,7 @@ class IrcClient(
         }
     }
 
-    fun getCurrentNickname(): String = client?.nick ?: config.nickname
+    override fun getCurrentNickname(): String = client?.nick ?: config.nickname
 
     inner class EventListener {
 
