@@ -1,5 +1,6 @@
 package com.loungecat.irc.service
 
+import com.loungecat.irc.BuildConfig
 import com.loungecat.irc.data.model.GithubRelease
 import com.loungecat.irc.data.model.UpdateResult
 import java.net.HttpURLConnection
