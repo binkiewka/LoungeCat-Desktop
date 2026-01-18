@@ -38,7 +38,7 @@ compose.desktop {
             targetFormats(TargetFormat.Deb, TargetFormat.AppImage, TargetFormat.Msi, TargetFormat.Rpm)
             packageName = "LoungeCat"
             packageVersion = "1.0.16"
-            description = "Modern IRC Client for Linux"
+            description = "Loungecat"
             vendor = "LoungeCat"
             
             modules("java.sql", "java.naming", "jdk.unsupported", "java.net.http")
@@ -54,7 +54,7 @@ compose.desktop {
                 iconFile.set(project.file("icon.ico"))
                 menuGroup = "Network"
                 perUserInstall = true
-                upgradeUuid = "9623707c-9b87-4c0a-995e-128225017042" // Generated UUID for this app
+                upgradeUuid = "68c2d829-5777-47b7-bd7b-72289c894901" // Changed to avoid overwriting old install
             }
         }
         

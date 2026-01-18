@@ -1,7 +1,7 @@
 # Maintainer: LoungeCat <loungecat@example.com>
 pkgname=loungecat
 pkgver=${VERSION}
-pkgrelease=1
+pkgrel=1
 pkgdesc="Modern IRC Client for Linux"
 arch=('x86_64')
 url="https://github.com/binkiewka/LoungeCat-Desktop"

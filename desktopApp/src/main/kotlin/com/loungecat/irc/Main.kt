@@ -29,6 +29,9 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 
 fun main() = application {
+    // Perform migration if needed (Windows specific)
+    PlatformUtils.performWindowsMigration()
+
     // Initialize services
     val appDataDir = File(System.getProperty("user.home"), ".loungecat")
     if (!appDataDir.exists()) {
@@ -215,6 +218,7 @@ fun main() = application {
                                             g.dispose()
 
                                             tray.setImage(resized)
+                                            tray.setTooltip("LoungeCat")
                                             Logger.d(
                                                     "Main",
                                                     "LoungeCat - Dorkbox: Tray image set successfully (resized to 24x24)"
@@ -375,7 +379,7 @@ fun main() = application {
                     popup.addSeparator()
                     popup.add(quitItem)
 
-                    trayIcon = java.awt.TrayIcon(resizedImage, "LoungeCat (Fallback)", popup)
+                    trayIcon = java.awt.TrayIcon(resizedImage, "LoungeCat", popup)
                     // Auto-size might help if we feed it a larger image, but we are resizing
                     // manually
                     // to be safe.

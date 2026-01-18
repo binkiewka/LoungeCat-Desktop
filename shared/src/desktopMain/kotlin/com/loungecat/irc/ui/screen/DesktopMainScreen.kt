@@ -6,6 +6,7 @@ package com.loungecat.irc.ui.screen
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -88,6 +89,30 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
 
     val splitViewState = rememberSplitViewState()
     // var activeSplitPane by remember { mutableStateOf(ActivePane.LEFT) }
+
+    // Update check
+    var updateAvailable by remember {
+        mutableStateOf<com.loungecat.irc.data.model.UpdateResult?>(null)
+    }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+
+    LaunchedEffect(Unit) {
+        val service = com.loungecat.irc.service.UpdateCheckService()
+        val result = service.checkForUpdates()
+        if (result != null && result.hasUpdate) {
+            updateAvailable = result
+            val action =
+                    snackbarHostState.showSnackbar(
+                            message = "New version available: ${result.latestVersion}",
+                            actionLabel = "Download",
+                            duration = SnackbarDuration.Indefinite
+                    )
+            if (action == SnackbarResult.ActionPerformed) {
+                uriHandler.openUri(result.releaseUrl)
+            }
+        }
+    }
 
     LaunchedEffect(userPreferences.spellCheckLanguage) {
         com.loungecat.irc.util.SpellChecker.initialize(userPreferences.spellCheckLanguage)
@@ -585,8 +610,12 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                     showEditServerDialog = false
                     editingServerConfig = null
                 },
-                onSave = { updatedConfig ->
-                    connectionManager.connect(updatedConfig)
+                onSave = { updatedConfig, reconnect ->
+                    if (reconnect) {
+                        connectionManager.connect(updatedConfig)
+                    } else {
+                        connectionManager.updateServerConfig(updatedConfig)
+                    }
                     showEditServerDialog = false
                     editingServerConfig = null
                 }
@@ -611,6 +640,21 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                     exportChannelName = null
                 }
         )
+    }
+
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+        SnackbarHost(hostState = snackbarHostState) { data ->
+            Snackbar(
+                    snackbarData = data,
+                    containerColor = colors.windowBackground,
+                    contentColor = colors.foreground,
+                    actionColor = colors.cyan,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier =
+                            Modifier.padding(16.dp)
+                                    .border(1.dp, colors.border, RoundedCornerShape(8.dp))
+            )
+        }
     }
 }
 
@@ -2149,7 +2193,7 @@ private fun SettingsDialog(
 private fun EditServerDialog(
         config: ServerConfig,
         onDismiss: () -> Unit,
-        onSave: (ServerConfig) -> Unit
+        onSave: (ServerConfig, reconnect: Boolean) -> Unit
 ) {
     val colors = AppColors.current
 
@@ -2487,7 +2531,7 @@ private fun EditServerDialog(
                                                 proxyUsername = proxyUsername.ifBlank { null },
                                                 proxyPassword = proxyPassword.ifBlank { null }
                                         )
-                                onSave(updatedConfig)
+                                onSave(updatedConfig, true)
                             }
                         },
                         enabled =
@@ -2500,7 +2544,60 @@ private fun EditServerDialog(
                 ) { Text("Save & Reconnect") }
             },
             dismissButton = {
-                TextButton(onClick = onDismiss) { Text("Cancel", color = colors.comment) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onDismiss) { Text("Cancel", color = colors.comment) }
+                    TextButton(
+                            onClick = {
+                                if (hostname.isNotBlank() &&
+                                                nickname.isNotBlank() &&
+                                                altNickname.isNotBlank() &&
+                                                username.isNotBlank() &&
+                                                realName.isNotBlank()
+                                ) {
+                                    val updatedConfig =
+                                            ServerConfig(
+                                                    id = config.id,
+                                                    serverName = serverName.ifBlank { hostname },
+                                                    hostname = hostname,
+                                                    port = port.toIntOrNull() ?: 6697,
+                                                    useSsl = useSsl,
+                                                    acceptSelfSignedCerts = acceptSelfSignedCerts,
+                                                    serverPassword =
+                                                            serverPassword.ifBlank { null },
+                                                    nickname = nickname,
+                                                    altNickname = altNickname,
+                                                    username = username,
+                                                    realName = realName,
+                                                    nickServPassword =
+                                                            nickServPassword.ifBlank { null },
+                                                    useSasl = useSasl,
+                                                    saslUsername =
+                                                            if (useSasl)
+                                                                    saslUsername.ifBlank { null }
+                                                            else null,
+                                                    saslPassword =
+                                                            if (useSasl)
+                                                                    saslPassword.ifBlank { null }
+                                                            else null,
+                                                    autoJoinChannels = autoJoinChannels,
+                                                    onConnectCommands = onConnectCommands,
+                                                    proxyType = proxyType,
+                                                    proxyHost = proxyHost,
+                                                    proxyPort = proxyPort.toIntOrNull() ?: 1080,
+                                                    proxyUsername = proxyUsername.ifBlank { null },
+                                                    proxyPassword = proxyPassword.ifBlank { null }
+                                            )
+                                    onSave(updatedConfig, false)
+                                }
+                            },
+                            enabled =
+                                    hostname.isNotBlank() &&
+                                            nickname.isNotBlank() &&
+                                            altNickname.isNotBlank() &&
+                                            username.isNotBlank() &&
+                                            realName.isNotBlank()
+                    ) { Text("Save Only", color = colors.cyan) }
+                }
             }
     )
 }

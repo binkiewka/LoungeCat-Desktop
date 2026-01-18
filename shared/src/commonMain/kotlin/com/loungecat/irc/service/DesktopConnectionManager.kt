@@ -55,6 +55,10 @@ class DesktopConnectionManager {
     private val _imageUrls = MutableStateFlow<Map<String, List<String>>>(emptyMap())
     val imageUrls: StateFlow<Map<String, List<String>>> = _imageUrls.asStateFlow()
 
+    // WHOIS cache: nickname (lowercase) -> formatted WHOIS info (aggregated from all servers)
+    private val _whoisCache = MutableStateFlow<Map<String, String>>(emptyMap())
+    val whoisCache: StateFlow<Map<String, String>> = _whoisCache.asStateFlow()
+
     private val _joinPartQuitMode = MutableStateFlow(JoinPartQuitDisplayMode.SHOW_ALL)
     val joinPartQuitMode: StateFlow<JoinPartQuitDisplayMode> = _joinPartQuitMode.asStateFlow()
 
@@ -242,6 +246,35 @@ class DesktopConnectionManager {
         databaseService?.let { db ->
             db.deleteServerConfig(id)
             Logger.d("DesktopConnectionManager", "Deleted server config: $id")
+        }
+    }
+
+    /**
+     * Update server configuration without reconnecting. Saves the config to database and updates
+     * in-memory state.
+     */
+    fun updateServerConfig(config: ServerConfig) {
+        managerScope.launch {
+            databaseService?.let { db ->
+                db.updateServerConfig(config)
+                Logger.d(
+                        "DesktopConnectionManager",
+                        "Updated server config (no reconnect): ${config.serverName}"
+                )
+            }
+
+            // Update the in-memory connection config if it exists
+            _connections.update { current ->
+                val existing = current[config.id]
+                if (existing != null) {
+                    current + (config.id to existing.copy(config = config))
+                } else {
+                    current
+                }
+            }
+
+            // Reload saved configs
+            loadSavedServers()
         }
     }
 
@@ -584,6 +617,15 @@ class DesktopConnectionManager {
         val channelName = _currentChannel.value
 
         managerScope.launch { processCommand(serverId, channelName, message) }
+    }
+
+    /** Request WHOIS info for a nickname (only if not already cached) */
+    fun requestWhois(serverId: Long, nickname: String) {
+        val nick = nickname.lowercase()
+        // Skip if already cached
+        if (_whoisCache.value.containsKey(nick)) return
+
+        managerScope.launch { connections[serverId]?.client?.sendRawCommand("WHOIS $nickname") }
     }
 
     private suspend fun processCommand(serverId: Long, channelName: String?, message: String) {
@@ -1056,6 +1098,16 @@ class DesktopConnectionManager {
         jobs.add(
                 managerScope.launch {
                     client.messages.collect { message -> updateMessages(serverId, message) }
+                }
+        )
+
+        // Collect WHOIS cache updates from this client
+        jobs.add(
+                managerScope.launch {
+                    client.whoisCache.collect { whoisData ->
+                        // Merge with global cache
+                        _whoisCache.update { current -> current + whoisData }
+                    }
                 }
         )
 

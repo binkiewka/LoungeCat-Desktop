@@ -24,10 +24,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -44,7 +46,11 @@ import com.loungecat.irc.data.model.UserPreferences
 import com.loungecat.irc.service.DesktopConnectionManager
 import com.loungecat.irc.shared.generated.resources.Res
 import com.loungecat.irc.shared.generated.resources.logo_transparent
+import com.loungecat.irc.ui.selection.SelectionController
 import com.loungecat.irc.ui.theme.AppColors
+import com.loungecat.irc.ui.util.ChatUiItem
+import com.loungecat.irc.ui.util.flattenToMessages
+import com.loungecat.irc.ui.util.groupMessages
 import com.loungecat.irc.util.InputHistoryHelper
 import com.loungecat.irc.util.SpellCheckRuleMatch
 import com.loungecat.irc.util.SpellChecker
@@ -72,6 +78,7 @@ fun ChatPanel(
     val messages = connectionStates[serverId]?.messages ?: emptyMap()
     val urlPreviews by connectionManager.urlPreviews.collectAsState()
     val imageUrls by connectionManager.imageUrls.collectAsState()
+    val whoisCache by connectionManager.whoisCache.collectAsState()
 
     val joinPartQuitMode = userPreferences.joinPartQuitMode
     val smartHideMinutes = userPreferences.smartHideMinutes
@@ -87,26 +94,27 @@ fun ChatPanel(
                 val jpqTypes = listOf(MessageType.JOIN, MessageType.PART, MessageType.QUIT)
 
                 when (joinPartQuitMode) {
-                    JoinPartQuitDisplayMode.SHOW_ALL -> allMessages
-                    JoinPartQuitDisplayMode.HIDE_ALL -> allMessages.filter { it.type !in jpqTypes }
+                    JoinPartQuitDisplayMode.SHOW_ALL -> groupMessages(allMessages)
+                    JoinPartQuitDisplayMode.HIDE_ALL ->
+                            groupMessages(allMessages.filter { it.type !in jpqTypes })
                     JoinPartQuitDisplayMode.GROUPED -> {
-                        // For grouped mode, we'll mark consecutive events for grouping
-                        // For now, just show all (grouping UI will be added later)
-                        allMessages
+                        groupMessages(allMessages)
                     }
                     JoinPartQuitDisplayMode.SMART_HIDE -> {
-                        allMessages.filter { msg ->
-                            if (msg.type in jpqTypes) {
-                                // Only show if user was recently active
-                                activityTracker.wasRecentlyActive(
-                                        channelName,
-                                        msg.sender,
-                                        smartHideMinutes
-                                )
-                            } else {
-                                true
-                            }
-                        }
+                        val filtered =
+                                allMessages.filter { msg ->
+                                    if (msg.type in jpqTypes) {
+                                        // Only show if user was recently active
+                                        activityTracker.wasRecentlyActive(
+                                                channelName,
+                                                msg.sender,
+                                                smartHideMinutes
+                                        )
+                                    } else {
+                                        true
+                                    }
+                                }
+                        groupMessages(filtered)
                     }
                 }
             }
@@ -123,6 +131,16 @@ fun ChatPanel(
     val tabCompletionHelper = remember { TabCompletionHelper() }
     val inputHistoryHelper = remember { InputHistoryHelper(userPreferences.inputHistorySize) }
     val focusRequester = remember { FocusRequester() }
+
+    // Text selection support
+    val clipboardManager = LocalClipboardManager.current
+    val listState = rememberLazyListState()
+    val selectionController = remember(listState) { SelectionController(listState) }
+
+    // Update selection controller with current messages
+    LaunchedEffect(channelMessages) {
+        selectionController.updateMessages(channelMessages.flattenToMessages())
+    }
 
     LaunchedEffect(isActive) {
         if (isActive) {
@@ -255,7 +273,6 @@ fun ChatPanel(
         )
 
         Column(modifier = Modifier.fillMaxSize()) {
-            val listState = rememberLazyListState()
             val isLoadingOlder by connectionManager.isLoadingOlderMessages.collectAsState()
 
             // Auto-scroll to bottom on new messages
@@ -279,23 +296,93 @@ fun ChatPanel(
             }
 
             Row(modifier = Modifier.weight(1f)) {
-                LazyColumn(state = listState, modifier = Modifier.weight(1f).padding(8.dp)) {
-                    items(channelMessages) { message ->
-                        MessageItem(
-                                message = message,
-                                urlPreviews = urlPreviews[message.id] ?: emptyList(),
-                                imageUrls = imageUrls[message.id] ?: emptyList(),
-                                currentNickname =
-                                        connectionManager.getConnection(serverId)?.config?.nickname
-                                                ?: "",
-                                urlImageDisplayMode = userPreferences.urlImageDisplayMode,
-                                fontSize = userPreferences.fontSize,
-                                timestampFormat = userPreferences.timestampFormat,
-                                coloredNicknames = userPreferences.coloredNicknames
-                        )
+                LazyColumn(
+                        state = listState,
+                        modifier =
+                                Modifier.weight(1f)
+                                        .padding(8.dp)
+                                        .onPointerEvent(PointerEventType.Press) { event ->
+                                            // Start selection on click
+                                            val position = event.changes.firstOrNull()?.position
+                                            if (position != null) {
+                                                findMessageAtPosition(
+                                                                position,
+                                                                listState,
+                                                                channelMessages
+                                                        )
+                                                        ?.let { (messageKey, localY) ->
+                                                            selectionController.onDragStart(
+                                                                    Offset(position.x, localY),
+                                                                    0,
+                                                                    messageKey
+                                                            )
+                                                        }
+                                            }
+                                        }
+                                        .onPointerEvent(PointerEventType.Move) { event ->
+                                            // Continue selection if active and button still pressed
+                                            val isPressed = event.changes.any { it.pressed }
+                                            if (selectionController.state.isSelecting && isPressed
+                                            ) {
+                                                val position = event.changes.firstOrNull()?.position
+                                                if (position != null) {
+                                                    findMessageAtPosition(
+                                                                    position,
+                                                                    listState,
+                                                                    channelMessages
+                                                            )
+                                                            ?.let { (messageKey, localY) ->
+                                                                selectionController.onDrag(
+                                                                        Offset(position.x, localY),
+                                                                        0,
+                                                                        messageKey
+                                                                )
+                                                            }
+                                                }
+                                            }
+                                        }
+                                        .onPointerEvent(PointerEventType.Release) { _ ->
+                                            if (selectionController.state.isSelecting) {
+                                                selectionController.onDragEnd()
+                                            }
+                                        }
+                ) {
+                    items(items = channelMessages, key = { it.id }) { item ->
+                        when (item) {
+                            is ChatUiItem.SingleMessage -> {
+                                val message = item.message
+                                MessageItem(
+                                        message = message,
+                                        urlPreviews = urlPreviews[message.id] ?: emptyList(),
+                                        imageUrls = imageUrls[message.id] ?: emptyList(),
+                                        currentNickname =
+                                                connectionManager.getConnection(serverId)
+                                                        ?.config
+                                                        ?.nickname
+                                                        ?: "",
+                                        urlImageDisplayMode = userPreferences.urlImageDisplayMode,
+                                        fontSize = userPreferences.fontSize,
+                                        timestampFormat = userPreferences.timestampFormat,
+                                        coloredNicknames = userPreferences.coloredNicknames,
+                                        whoisInfo = whoisCache,
+                                        onRequestWhois = { nick ->
+                                            connectionManager.requestWhois(serverId, nick)
+                                        },
+                                        selectionController = selectionController,
+                                        selectionHighlightColor =
+                                                colors.selection.copy(alpha = 0.4f),
+                                        onCopySelection = { text ->
+                                            clipboardManager.setText(AnnotatedString(text))
+                                            selectionController.clearSelection()
+                                        }
+                                )
+                            }
+                            is ChatUiItem.GroupedEvents -> {
+                                GroupedEventItem(item)
+                            }
+                        }
                     }
                 }
-
                 CustomVerticalScrollbar(listState = listState)
             }
 
@@ -608,4 +695,27 @@ fun ChatPanel(
             }
         }
     }
+}
+
+/**
+ * Finds the message at a given screen position within the LazyColumn. Returns pair of (messageKey,
+ * localY) where localY is relative to the item.
+ */
+private fun findMessageAtPosition(
+        position: Offset,
+        listState: androidx.compose.foundation.lazy.LazyListState,
+        messages: List<ChatUiItem>
+): Pair<String, Float>? {
+    val visibleItems = listState.layoutInfo.visibleItemsInfo
+    for (item in visibleItems) {
+        val itemTop = item.offset.toFloat()
+        val itemBottom = (item.offset + item.size).toFloat()
+        if (position.y >= itemTop && position.y < itemBottom) {
+            val messageKey = messages.getOrNull(item.index)?.id
+            if (messageKey != null) {
+                return messageKey to (position.y - itemTop)
+            }
+        }
+    }
+    return null
 }

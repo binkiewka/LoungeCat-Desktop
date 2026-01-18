@@ -37,6 +37,13 @@ class IrcClient(
     private val _channels = MutableStateFlow<Map<String, Channel>>(emptyMap())
     val channels: StateFlow<Map<String, Channel>> = _channels.asStateFlow()
 
+    // WHOIS cache: nickname (lowercase) -> formatted WHOIS info
+    private val _whoisCache = MutableStateFlow<Map<String, String>>(emptyMap())
+    val whoisCache: StateFlow<Map<String, String>> = _whoisCache.asStateFlow()
+
+    // Pending WHOIS: nickname (lowercase) -> list of info lines being collected
+    private val pendingWhois = mutableMapOf<String, MutableList<String>>()
+
     private val previousTopics = mutableMapOf<String, String?>()
     private var hasConnectedBefore = false
     private val initialJoinChannels = mutableSetOf<String>()
@@ -891,30 +898,109 @@ class IrcClient(
 
                     // Handle WHOIS and other server information numerics
                     when (numeric) {
-                        // WHOIS Numerics
-                        311, // RPL_WHOISUSER
-                        312, // RPL_WHOISSERVER
-                        313, // RPL_WHOISOPERATOR
-                        317, // RPL_WHOISIDLE
-                        318, // RPL_ENDOFWHOIS
-                        319, // RPL_WHOISCHANNELS
-                        301, // RPL_AWAY
-                        314, // RPL_WHOWASUSER
-                        369, // RPL_ENDOFWHOWAS
-                        307, // RPL_WHOISREGNICK
-                        330, // RPL_WHOISACCOUNT
-                        378, // RPL_WHOISHOST
-                        379, // RPL_WHOISMODES
-                        671, // RPL_WHOISSECURE
-                        276, // RPL_WHOISCERTFP
-                        -> {
+                        // WHOIS Numerics - collect into pendingWhois map
+                        311 -> { // RPL_WHOISUSER: <nick> <user> <host> * :<realname>
+                            val params = event.parameters
+                            if (params.size >= 6) {
+                                val nick = params[1].lowercase()
+                                val user = params[2]
+                                val host = params[3]
+                                val realName = params[5]
+                                pendingWhois
+                                        .getOrPut(nick) { mutableListOf() }
+                                        .add("$user@$host ($realName)")
+                            }
+                        }
+                        312 -> { // RPL_WHOISSERVER: <nick> <server> :<serverinfo>
+                            val params = event.parameters
+                            if (params.size >= 4) {
+                                val nick = params[1].lowercase()
+                                val server = params[2]
+                                pendingWhois[nick]?.add("Server: $server")
+                            }
+                        }
+                        319 -> { // RPL_WHOISCHANNELS: <nick> :<channels>
+                            val params = event.parameters
+                            if (params.size >= 3) {
+                                val nick = params[1].lowercase()
+                                val channels = params.drop(2).joinToString(" ")
+                                pendingWhois[nick]?.add("Channels: $channels")
+                            }
+                        }
+                        317 -> { // RPL_WHOISIDLE: <nick> <seconds> <signon> :<info>
+                            val params = event.parameters
+                            if (params.size >= 3) {
+                                val nick = params[1].lowercase()
+                                val idleSeconds = params[2].toLongOrNull() ?: 0
+                                val idleMinutes = idleSeconds / 60
+                                if (idleMinutes > 0) {
+                                    pendingWhois[nick]?.add("Idle: ${idleMinutes}m")
+                                }
+                            }
+                        }
+                        330 -> { // RPL_WHOISACCOUNT: <nick> <account> :<info>
+                            val params = event.parameters
+                            if (params.size >= 3) {
+                                val nick = params[1].lowercase()
+                                val account = params[2]
+                                pendingWhois[nick]?.add("Account: $account")
+                            }
+                        }
+                        671 -> { // RPL_WHOISSECURE
+                            val params = event.parameters
+                            if (params.size >= 2) {
+                                val nick = params[1].lowercase()
+                                pendingWhois[nick]?.add("Using TLS")
+                            }
+                        }
+                        313 -> { // RPL_WHOISOPERATOR
+                            val params = event.parameters
+                            if (params.size >= 2) {
+                                val nick = params[1].lowercase()
+                                pendingWhois[nick]?.add("IRC Operator")
+                            }
+                        }
+                        301 -> { // RPL_AWAY
+                            val params = event.parameters
+                            if (params.size >= 3) {
+                                val nick = params[1].lowercase()
+                                val awayMsg = params.drop(2).joinToString(" ")
+                                pendingWhois[nick]?.add("Away: $awayMsg")
+                            }
+                        }
+                        318 -> { // RPL_ENDOFWHOIS - finalize and cache
+                            val params = event.parameters
+                            if (params.size >= 2) {
+                                val nick = params[1].lowercase()
+                                val lines = pendingWhois.remove(nick)
+                                if (!lines.isNullOrEmpty()) {
+                                    val whoisInfo = lines.joinToString("\n")
+                                    _whoisCache.update { it + (nick to whoisInfo) }
+                                }
+                            }
+                            // Also emit message to server window
+                            _messages.emit(
+                                    IncomingMessage(
+                                            target = serverChannelName,
+                                            sender = "WHOIS",
+                                            content = "End of WHOIS",
+                                            type = MessageType.SYSTEM
+                                    )
+                            )
+                        }
+                        // Other WHOIS numerics - just show in server window
+                        307,
+                        314,
+                        369,
+                        378,
+                        379,
+                        276 -> {
                             val message = event.parameters.drop(1).joinToString(" ")
-                            val content = if (numeric == 318) "End of WHOIS" else message
                             _messages.emit(
                                     IncomingMessage(
                                             target = serverChannelName,
                                             sender = "Server",
-                                            content = content,
+                                            content = message,
                                             type = MessageType.SYSTEM
                                     )
                             )

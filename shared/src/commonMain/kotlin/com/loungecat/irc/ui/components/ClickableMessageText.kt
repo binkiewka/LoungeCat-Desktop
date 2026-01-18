@@ -1,11 +1,16 @@
 package com.loungecat.irc.ui.components
 
 // LocalUriHandler removed as LinkAnnotation handles it
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.TooltipArea
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -17,11 +22,13 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.loungecat.irc.ui.theme.ThemeColors
 import com.loungecat.irc.util.IrcFormatParser
 import com.loungecat.irc.util.UrlExtractor
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ClickableMessageText(
         text: String,
@@ -30,7 +37,9 @@ fun ClickableMessageText(
         modifier: Modifier = Modifier,
         nickname: String? = null,
         nicknameColor: Color? = null,
-        fontSize: TextUnit = 12.sp
+        fontSize: TextUnit = 12.sp,
+        whoisInfo: String? = null,
+        onRequestWhois: (() -> Unit)? = null
 ) {
     val annotatedString =
             remember(text, nickname, nicknameColor) {
@@ -174,11 +183,80 @@ fun ClickableMessageText(
                 }
             }
 
-    Text(
-            text = annotatedString,
-            style = MaterialTheme.typography.bodySmall.copy(fontSize = fontSize),
-            modifier = modifier
-    )
+    // Show tooltip if nickname is present (for WHOIS info or trigger request)
+    if (nickname != null) {
+        // Trigger WHOIS request when we don't have cached info
+        if (whoisInfo == null && onRequestWhois != null) {
+            var hasRequestedWhois by remember { mutableStateOf(false) }
+
+            TooltipArea(
+                    tooltip = {
+                        Text(
+                                text = "Loading WHOIS for $nickname...",
+                                color = colors.foreground,
+                                fontSize = 12.sp,
+                                modifier =
+                                        Modifier.shadow(4.dp, RoundedCornerShape(4.dp))
+                                                .background(
+                                                        colors.windowBackground.copy(alpha = 0.95f),
+                                                        RoundedCornerShape(4.dp)
+                                                )
+                                                .padding(8.dp)
+                        )
+                        // Request WHOIS on first hover
+                        LaunchedEffect(nickname) {
+                            if (!hasRequestedWhois) {
+                                hasRequestedWhois = true
+                                onRequestWhois()
+                            }
+                        }
+                    },
+                    delayMillis = 600
+            ) {
+                Text(
+                        text = annotatedString,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = fontSize),
+                        modifier = modifier
+                )
+            }
+        } else if (whoisInfo != null) {
+            TooltipArea(
+                    tooltip = {
+                        Text(
+                                text = whoisInfo,
+                                color = colors.foreground,
+                                fontSize = 12.sp,
+                                modifier =
+                                        Modifier.shadow(4.dp, RoundedCornerShape(4.dp))
+                                                .background(
+                                                        colors.windowBackground.copy(alpha = 0.95f),
+                                                        RoundedCornerShape(4.dp)
+                                                )
+                                                .padding(8.dp)
+                        )
+                    },
+                    delayMillis = 400
+            ) {
+                Text(
+                        text = annotatedString,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = fontSize),
+                        modifier = modifier
+                )
+            }
+        } else {
+            Text(
+                    text = annotatedString,
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = fontSize),
+                    modifier = modifier
+            )
+        }
+    } else {
+        Text(
+                text = annotatedString,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = fontSize),
+                modifier = modifier
+        )
+    }
 }
 
 private fun findOriginalUrl(text: String, normalizedUrl: String, startFrom: Int): String? {
