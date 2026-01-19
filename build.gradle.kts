@@ -8,6 +8,7 @@ plugins {
     alias(libs.plugins.room) apply false
 }
 
+allprojects {
     group = "com.loungecat.irc"
     version = "1.0.19"
 }
