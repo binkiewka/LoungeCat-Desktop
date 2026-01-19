@@ -1385,37 +1385,6 @@ class IrcClient(
                             // Auto-Join Channels
                             autoJoinChannelList.forEach { channelName -> joinChannel(channelName) }
                         }
-                        311 -> {
-                            val params = event.parameters
-                            if (params.size >= 6) {
-                                val nick = params[1]
-                                val user = params[2]
-                                val host = params[3]
-                                val realName = params[5]
-                                _messages.emit(
-                                        IncomingMessage(
-                                                target = serverChannelName,
-                                                sender = "WHOIS",
-                                                content = "$nick ($user@$host): $realName",
-                                                type = MessageType.SERVER
-                                        )
-                                )
-                            }
-                        }
-                        318 -> {
-                            val params = event.parameters
-                            if (params.size >= 2) {
-                                val nick = params[1]
-                                _messages.emit(
-                                        IncomingMessage(
-                                                target = serverChannelName,
-                                                sender = "WHOIS",
-                                                content = "End of WHOIS for $nick",
-                                                type = MessageType.SERVER
-                                        )
-                                )
-                            }
-                        }
                         372, 375, 376 -> {
                             if (!hasConnectedBefore) {
                                 val params = event.parameters

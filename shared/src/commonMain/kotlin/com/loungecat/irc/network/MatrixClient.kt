@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import net.folivo.trixnity.client.MatrixClient
 import net.folivo.trixnity.client.login
-import net.folivo.trixnity.client.media.InMemoryMediaStore
+import net.folivo.trixnity.client.media.createInMemoryMediaStoreModule
 import net.folivo.trixnity.client.room
 import net.folivo.trixnity.client.room.message.text
 import net.folivo.trixnity.client.store.repository.createInMemoryRepositoriesModule
@@ -71,7 +71,7 @@ class MatrixClient(
                                     identifier = IdentifierType.User(username),
                                     password = password,
                                     repositoriesModule = createInMemoryRepositoriesModule(),
-                                    mediaStore = InMemoryMediaStore()
+                                    mediaStoreModule = createInMemoryMediaStoreModule()
                             )
                             .getOrThrow()
 
