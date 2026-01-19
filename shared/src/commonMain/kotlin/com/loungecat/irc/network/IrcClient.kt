@@ -5,7 +5,9 @@ import com.loungecat.irc.util.IrcCommand
 import com.loungecat.irc.util.IrcCommandParser
 import com.loungecat.irc.util.Logger
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import net.engio.mbassy.listener.Handler
 import org.kitteh.irc.client.library.Client
@@ -43,6 +45,13 @@ class IrcClient(
 
     // Pending WHOIS: nickname (lowercase) -> list of info lines being collected
     private val pendingWhois = mutableMapOf<String, MutableList<String>>()
+    private val silentWhoisTargets = mutableSetOf<String>()
+
+    override fun requestSilentWhois(nickname: String) {
+        val nick = nickname.lowercase()
+        silentWhoisTargets.add(nick)
+        scope.launch { sendRawCommand("WHOIS $nickname") }
+    }
 
     private val previousTopics = mutableMapOf<String, String?>()
     private var hasConnectedBefore = false
@@ -306,6 +315,18 @@ class IrcClient(
             try {
                 scope.launch {
                     _connectionState.value = ConnectionState.Connected(config.serverName)
+
+                    // Start Keep-Alive Pinger
+                    launch {
+                        while (isActive) {
+                            delay(30000) // 30 seconds
+                            try {
+                                client?.sendRawLine("PING :keepalive")
+                            } catch (e: Exception) {
+                                Logger.e("IrcClient", "Failed to send keepalive PING", e)
+                            }
+                        }
+                    }
 
                     val serverChannelName = "* ${config.serverName}"
                     _channels.update { channels ->
@@ -909,6 +930,26 @@ class IrcClient(
                                 pendingWhois
                                         .getOrPut(nick) { mutableListOf() }
                                         .add("$user@$host ($realName)")
+
+                                if (!silentWhoisTargets.contains(nick)) {
+                                    val isSelf =
+                                            nick.equals(getCurrentNickname(), ignoreCase = true)
+                                    if (!isSelf) {
+                                        startQuery(params[1]) // Ensure query window exists
+                                    }
+
+                                    _messages.emit(
+                                            IncomingMessage(
+                                                    target =
+                                                            if (isSelf) serverChannelName
+                                                            else params[1], // Use original case
+                                                    // nick
+                                                    sender = "WHOIS",
+                                                    content = "$nick ($user@$host): $realName",
+                                                    type = MessageType.SERVER
+                                            )
+                                    )
+                                }
                             }
                         }
                         312 -> { // RPL_WHOISSERVER: <nick> <server> :<serverinfo>
@@ -917,6 +958,22 @@ class IrcClient(
                                 val nick = params[1].lowercase()
                                 val server = params[2]
                                 pendingWhois[nick]?.add("Server: $server")
+
+                                if (!silentWhoisTargets.contains(nick)) {
+                                    val isSelf =
+                                            nick.equals(getCurrentNickname(), ignoreCase = true)
+                                    _messages.emit(
+                                            IncomingMessage(
+                                                    target =
+                                                            if (isSelf) serverChannelName
+                                                            else params[1],
+                                                    sender = "WHOIS",
+                                                    content =
+                                                            "Server: $server (${params.getOrNull(3) ?: ""})",
+                                                    type = MessageType.SERVER
+                                            )
+                                    )
+                                }
                             }
                         }
                         319 -> { // RPL_WHOISCHANNELS: <nick> :<channels>
@@ -925,6 +982,21 @@ class IrcClient(
                                 val nick = params[1].lowercase()
                                 val channels = params.drop(2).joinToString(" ")
                                 pendingWhois[nick]?.add("Channels: $channels")
+
+                                if (!silentWhoisTargets.contains(nick)) {
+                                    val isSelf =
+                                            nick.equals(getCurrentNickname(), ignoreCase = true)
+                                    _messages.emit(
+                                            IncomingMessage(
+                                                    target =
+                                                            if (isSelf) serverChannelName
+                                                            else params[1],
+                                                    sender = "WHOIS",
+                                                    content = "Channels: $channels",
+                                                    type = MessageType.SERVER
+                                            )
+                                    )
+                                }
                             }
                         }
                         317 -> { // RPL_WHOISIDLE: <nick> <seconds> <signon> :<info>
@@ -933,8 +1005,25 @@ class IrcClient(
                                 val nick = params[1].lowercase()
                                 val idleSeconds = params[2].toLongOrNull() ?: 0
                                 val idleMinutes = idleSeconds / 60
-                                if (idleMinutes > 0) {
-                                    pendingWhois[nick]?.add("Idle: ${idleMinutes}m")
+                                val signon = params.getOrNull(3)?.toLongOrNull() ?: 0
+
+                                val idleMsg =
+                                        if (idleMinutes > 0) "Idle: ${idleMinutes}m" else "Idle: 0m"
+                                pendingWhois[nick]?.add(idleMsg)
+
+                                if (!silentWhoisTargets.contains(nick)) {
+                                    val isSelf =
+                                            nick.equals(getCurrentNickname(), ignoreCase = true)
+                                    _messages.emit(
+                                            IncomingMessage(
+                                                    target =
+                                                            if (isSelf) serverChannelName
+                                                            else params[1],
+                                                    sender = "WHOIS",
+                                                    content = "$idleMsg (Signon: $signon)",
+                                                    type = MessageType.SERVER
+                                            )
+                                    )
                                 }
                             }
                         }
@@ -944,6 +1033,21 @@ class IrcClient(
                                 val nick = params[1].lowercase()
                                 val account = params[2]
                                 pendingWhois[nick]?.add("Account: $account")
+
+                                if (!silentWhoisTargets.contains(nick)) {
+                                    val isSelf =
+                                            nick.equals(getCurrentNickname(), ignoreCase = true)
+                                    _messages.emit(
+                                            IncomingMessage(
+                                                    target =
+                                                            if (isSelf) serverChannelName
+                                                            else params[1],
+                                                    sender = "WHOIS",
+                                                    content = "Account: $account",
+                                                    type = MessageType.SERVER
+                                            )
+                                    )
+                                }
                             }
                         }
                         671 -> { // RPL_WHOISSECURE
@@ -951,6 +1055,21 @@ class IrcClient(
                             if (params.size >= 2) {
                                 val nick = params[1].lowercase()
                                 pendingWhois[nick]?.add("Using TLS")
+
+                                if (!silentWhoisTargets.contains(nick)) {
+                                    val isSelf =
+                                            nick.equals(getCurrentNickname(), ignoreCase = true)
+                                    _messages.emit(
+                                            IncomingMessage(
+                                                    target =
+                                                            if (isSelf) serverChannelName
+                                                            else params[1],
+                                                    sender = "WHOIS",
+                                                    content = "Using TLS",
+                                                    type = MessageType.SERVER
+                                            )
+                                    )
+                                }
                             }
                         }
                         313 -> { // RPL_WHOISOPERATOR
@@ -958,6 +1077,21 @@ class IrcClient(
                             if (params.size >= 2) {
                                 val nick = params[1].lowercase()
                                 pendingWhois[nick]?.add("IRC Operator")
+
+                                if (!silentWhoisTargets.contains(nick)) {
+                                    val isSelf =
+                                            nick.equals(getCurrentNickname(), ignoreCase = true)
+                                    _messages.emit(
+                                            IncomingMessage(
+                                                    target =
+                                                            if (isSelf) serverChannelName
+                                                            else params[1],
+                                                    sender = "WHOIS",
+                                                    content = "is an IRC Operator",
+                                                    type = MessageType.SERVER
+                                            )
+                                    )
+                                }
                             }
                         }
                         301 -> { // RPL_AWAY
@@ -966,6 +1100,21 @@ class IrcClient(
                                 val nick = params[1].lowercase()
                                 val awayMsg = params.drop(2).joinToString(" ")
                                 pendingWhois[nick]?.add("Away: $awayMsg")
+
+                                if (!silentWhoisTargets.contains(nick)) {
+                                    val isSelf =
+                                            nick.equals(getCurrentNickname(), ignoreCase = true)
+                                    _messages.emit(
+                                            IncomingMessage(
+                                                    target =
+                                                            if (isSelf) serverChannelName
+                                                            else params[1],
+                                                    sender = "WHOIS",
+                                                    content = "Away: $awayMsg",
+                                                    type = MessageType.SERVER
+                                            )
+                                    )
+                                }
                             }
                         }
                         318 -> { // RPL_ENDOFWHOIS - finalize and cache
@@ -977,33 +1126,69 @@ class IrcClient(
                                     val whoisInfo = lines.joinToString("\n")
                                     _whoisCache.update { it + (nick to whoisInfo) }
                                 }
-                            }
-                            // Also emit message to server window
-                            _messages.emit(
-                                    IncomingMessage(
-                                            target = serverChannelName,
-                                            sender = "WHOIS",
-                                            content = "End of WHOIS",
-                                            type = MessageType.SYSTEM
+
+                                val wasSilent = silentWhoisTargets.remove(nick)
+                                if (!wasSilent) {
+                                    // Also emit message to PM window (or server if self)
+                                    val isSelf =
+                                            nick.equals(getCurrentNickname(), ignoreCase = true)
+                                    _messages.emit(
+                                            IncomingMessage(
+                                                    target =
+                                                            if (isSelf) serverChannelName
+                                                            else params[1],
+                                                    sender = "WHOIS",
+                                                    content = "End of WHOIS for ${params[1]}",
+                                                    type = MessageType.SERVER
+                                            )
                                     )
-                            )
+                                }
+                            }
                         }
-                        // Other WHOIS numerics - just show in server window
+                        // Other WHOIS numerics - attempt to redirect if we can identify nick,
+                        // otherwise server
                         307,
                         314,
                         369,
                         378,
                         379,
                         276 -> {
+                            val target =
+                                    if (event.parameters.size > 1) event.parameters[1]
+                                    else serverChannelName
                             val message = event.parameters.drop(1).joinToString(" ")
-                            _messages.emit(
-                                    IncomingMessage(
-                                            target = serverChannelName,
-                                            sender = "Server",
-                                            content = message,
-                                            type = MessageType.SYSTEM
-                                    )
-                            )
+
+                            // Heuristic: check if second param is a nick we are tracking or if we
+                            // opened a query
+                            // Not perfect, but fallback to server channel is fine.
+                            // For simplicity, we keep these on Server Channel unless we are sure.
+                            // 276 is WHOIS CERT fingerprint
+                            // 378 is WHOIS HOST (real ip)
+
+                            val finalTarget =
+                                    if (silentWhoisTargets.contains(target.lowercase())) {
+                                        serverChannelName // Suppressed anyway? No,
+                                        // silentWhoisTargets doesn't suppress
+                                        // these generic ones in original code
+                                        // logic, but maybe should?
+                                        // Original code said: "For now, we'll let them through"
+                                        serverChannelName
+                                    } else if (_channels.value.containsKey(target)) {
+                                        target
+                                    } else {
+                                        serverChannelName
+                                    }
+
+                            if (!silentWhoisTargets.contains(target.lowercase())) {
+                                _messages.emit(
+                                        IncomingMessage(
+                                                target = finalTarget,
+                                                sender = "Server",
+                                                content = message,
+                                                type = MessageType.SYSTEM
+                                        )
+                                )
+                            }
                         }
 
                         // Server Information / MOTD / Welcome

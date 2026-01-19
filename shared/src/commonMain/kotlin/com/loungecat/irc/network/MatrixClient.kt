@@ -203,4 +203,9 @@ class MatrixClient(
     override fun updateConfig(newConfig: ServerConfig) {
         this.config = newConfig
     }
+
+    override fun requestSilentWhois(nickname: String) {
+        // Matrix doesn't support WHOIS in the same way, or it's handled via profile.
+        // For now, no-op.
+    }
 }

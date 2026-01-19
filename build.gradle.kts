@@ -8,9 +8,8 @@ plugins {
     alias(libs.plugins.room) apply false
 }
 
-allprojects {
     group = "com.loungecat.irc"
-    version = "1.0.18"
+    version = "1.0.19"
 }
 
 tasks.register("clean", Delete::class) {

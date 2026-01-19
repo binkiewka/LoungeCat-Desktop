@@ -7,6 +7,10 @@ plugins {
     alias(libs.plugins.shadow)
 }
 
+kotlin {
+    jvmToolchain(17)
+}
+
 tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
     manifest {
         attributes["Main-Class"] = "com.loungecat.irc.MainKt"

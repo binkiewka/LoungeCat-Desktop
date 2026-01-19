@@ -647,6 +647,12 @@ class DesktopConnectionManager {
         managerScope.launch { connections[serverId]?.client?.sendRawCommand("WHOIS $nickname") }
     }
 
+    fun requestSilentWhois(serverId: Long, nickname: String) {
+        // We DON'T skip if cached, because a manual click usually implies "refresh" or "show me".
+        // The dialog will use the cache but triggering the request ensures fresh data.
+        managerScope.launch { connections[serverId]?.client?.requestSilentWhois(nickname) }
+    }
+
     private suspend fun processCommand(serverId: Long, channelName: String?, message: String) {
         val connection = connections[serverId] ?: return
         when (val command = IrcCommandParser.parse(message)) {
@@ -897,7 +903,8 @@ class DesktopConnectionManager {
             target: String,
             message: String
     ) {
-        if (PastebinService.shouldPaste(message)) {
+        val threshold = _userPreferences.value.pastebinThreshold
+        if (PastebinService.shouldPaste(message, maxLength = threshold)) {
             addSystemMessage(
                     connection.serverId,
                     target,
@@ -1326,11 +1333,36 @@ class DesktopConnectionManager {
             currentConnections + (serverId to updatedConnection)
         }
 
+        // Update Unread Counts
+        // We do this separately to ensure we are modifying the 'latest' connection state
+        // and because it modifies 'channels', not 'messages'.
+        if (!message.isSelf && message.type == MessageType.NORMAL) {
+            _connections.update { currentConnections ->
+                val connection = currentConnections[serverId] ?: return@update currentConnections
+                val currentChannels = connection.channels.toMutableList()
+                val index = currentChannels.indexOfFirst { it.name == message.target }
+
+                if (index != -1) {
+                    val channel = currentChannels[index]
+                    currentChannels[index] =
+                            channel.copy(unreadCount = channel.unreadCount + 1, hasUnread = true)
+                }
+                currentConnections + (serverId to connection.copy(channels = currentChannels))
+            }
+            updateServerList()
+        }
+
+        // Note: We might be doing double updates to _connections here.
+        // Ideally we'd merge them but readability first.
+
         // Update active view if needed
         if (_currentServerId.value == serverId) {
             // We can't easily get the just-updated connection here without another map lookup
             // but since we just updated it, we can re-fetch
-            connections[serverId]?.let { _messages.value = it.messages }
+            connections[serverId]?.let {
+                _messages.value = it.messages
+                _channels.value = it.channels
+            }
         }
 
         if (message.type == MessageType.NORMAL || message.type == MessageType.ACTION) {
@@ -1555,6 +1587,28 @@ class DesktopConnectionManager {
         updatePreference { it.copy(trustedPreviewUsers = it.trustedPreviewUsers - lower) }
     }
 
+    fun markAsRead(serverId: Long, channelName: String) {
+        _connections.update { currentConnections ->
+            val connection = currentConnections[serverId] ?: return@update currentConnections
+            val currentChannels = connection.channels.toMutableList()
+            val index = currentChannels.indexOfFirst { it.name == channelName }
+
+            if (index != -1) {
+                val channel = currentChannels[index]
+                if (channel.unreadCount > 0 || channel.hasUnread) {
+                    currentChannels[index] = channel.copy(unreadCount = 0, hasUnread = false)
+                }
+            }
+            currentConnections + (serverId to connection.copy(channels = currentChannels))
+        }
+
+        updateServerList()
+
+        if (_currentServerId.value == serverId) {
+            connections[serverId]?.let { _channels.value = it.channels }
+        }
+    }
+
     private fun addSystemMessage(serverId: Long, channelName: String, content: String) {
         connections[serverId]?.let { connection ->
             val systemMessage =
@@ -1597,6 +1651,10 @@ class DesktopConnectionManager {
                     )
                 }
         _servers.value = newServerList
+    }
+
+    fun setPastebinThreshold(threshold: Int) {
+        updatePreference { it.copy(pastebinThreshold = threshold) }
     }
 }
 

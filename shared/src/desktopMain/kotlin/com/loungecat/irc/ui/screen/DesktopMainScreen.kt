@@ -43,6 +43,7 @@ import com.loungecat.irc.ui.components.CustomVerticalScrollbar
 import com.loungecat.irc.ui.components.ExportDialog
 import com.loungecat.irc.ui.components.QuickModerationDialog
 import com.loungecat.irc.ui.components.UserContextMenu
+import com.loungecat.irc.ui.components.WhoisDialog
 import com.loungecat.irc.ui.components.rememberSplitViewState
 import com.loungecat.irc.ui.theme.AppColors
 import com.loungecat.irc.util.TabCompletionHelper
@@ -85,6 +86,8 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
     var isUserListVisible by remember { mutableStateOf(true) }
     var showExportDialog by remember { mutableStateOf(false) }
     var exportChannelName by remember { mutableStateOf<String?>(null) }
+    var showWhoisDialog by remember { mutableStateOf(false) }
+    var whoisTargetUser by remember { mutableStateOf<String?>(null) }
     val expandedServerIds = remember { mutableStateListOf<Long>() }
 
     val splitViewState = rememberSplitViewState()
@@ -543,7 +546,11 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                     selectedUserForContextMenu = null
                 },
                 onWhois = { nickname ->
-                    connectionManager.sendMessage("/whois $nickname")
+                    if (currentServerId != null) {
+                        connectionManager.requestSilentWhois(currentServerId!!, nickname)
+                        whoisTargetUser = nickname
+                        showWhoisDialog = true
+                    }
                     selectedUserForContextMenu = null
                 },
                 onModerate = { nickname ->
@@ -614,6 +621,7 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                     connectionManager.setProcessLinkPreviewsFromOthers(it)
                 },
                 onUseProxyForPreviewsChange = { connectionManager.setUseProxyForPreviews(it) },
+                onPastebinThresholdChange = { connectionManager.setPastebinThreshold(it) },
                 onDismiss = { showSettingsDialog = false }
         )
     }
@@ -653,6 +661,21 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                 onDismiss = {
                     showExportDialog = false
                     exportChannelName = null
+                }
+        )
+    }
+
+    if (showWhoisDialog && whoisTargetUser != null) {
+        val whoisDataMap by connectionManager.whoisCache.collectAsState()
+        val nickname = whoisTargetUser!!
+        val data = whoisDataMap[nickname.lowercase()]
+
+        WhoisDialog(
+                nickname = nickname,
+                whoisData = data,
+                onDismiss = {
+                    showWhoisDialog = false
+                    whoisTargetUser = null
                 }
         )
     }
@@ -1655,6 +1678,7 @@ private fun SettingsDialog(
         onHistoryReplayLinesChange: (Int) -> Unit,
         onProcessLinkPreviewsFromOthersChange: (Boolean) -> Unit,
         onUseProxyForPreviewsChange: (Boolean) -> Unit,
+        onPastebinThresholdChange: (Int) -> Unit,
         onDismiss: () -> Unit
 ) {
     val colors = AppColors.current
@@ -1964,6 +1988,43 @@ private fun SettingsDialog(
                                             )
                             )
                         }
+
+                        // Users
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Paste Service Threshold (chars)", color = colors.foreground)
+                                Text(
+                                        "Automatically upload messages longer than this",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colors.comment
+                                )
+                            }
+                            OutlinedTextField(
+                                    value = userPreferences.pastebinThreshold.toString(),
+                                    onValueChange = {
+                                        val newValue = it.filter { char -> char.isDigit() }
+                                        if (newValue.isNotEmpty()) {
+                                            onPastebinThresholdChange(newValue.toInt())
+                                        }
+                                    },
+                                    modifier = Modifier.width(100.dp),
+                                    singleLine = true,
+                                    colors =
+                                            OutlinedTextFieldDefaults.colors(
+                                                    focusedBorderColor = colors.cyan,
+                                                    unfocusedBorderColor = colors.border,
+                                                    focusedTextColor = colors.foreground,
+                                                    unfocusedTextColor = colors.foreground,
+                                                    cursorColor = colors.cyan
+                                            )
+                            )
+                        }
+
+                        HorizontalDivider(color = colors.border)
 
                         // Split View
                         Row(

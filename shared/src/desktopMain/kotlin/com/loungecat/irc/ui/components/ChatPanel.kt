@@ -275,10 +275,46 @@ fun ChatPanel(
         Column(modifier = Modifier.fillMaxSize()) {
             val isLoadingOlder by connectionManager.isLoadingOlderMessages.collectAsState()
 
-            // Auto-scroll to bottom on new messages
+            // Auto-scroll logic
+            // Initial scroll to bottom when panel opens (fixes Split View scroll issue)
+            LaunchedEffect(Unit) {
+                if (channelMessages.isNotEmpty()) {
+                    listState.scrollToItem(channelMessages.size - 1)
+                }
+            }
+
+            // Mark as read when active
+            LaunchedEffect(isActive, channelMessages.size) {
+                if (isActive) {
+                    connectionManager.markAsRead(serverId, channelName)
+                }
+            }
             LaunchedEffect(channelMessages.size) {
                 if (channelMessages.isNotEmpty() && !isLoadingOlder) {
-                    listState.animateScrollToItem(channelMessages.size - 1)
+                    val lastItem = channelMessages.last()
+
+                    val isSelf =
+                            when (lastItem) {
+                                is ChatUiItem.SingleMessage -> lastItem.message.isSelf
+                                is ChatUiItem.GroupedEvents -> lastItem.events.any { it.isSelf }
+                            }
+
+                    // Check if we are currently at the bottom (or close to it)
+                    val layoutInfo = listState.layoutInfo
+                    val totalItemsCount = layoutInfo.totalItemsCount
+                    val lastVisibleItemIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+
+                    // If the user was viewing the previous last item, they are "at bottom"
+                    // Allow a margin of error (e.g. 2 items)
+                    val isAtBottom = lastVisibleItemIndex >= totalItemsCount - 2
+
+                    if (isAtBottom || isSelf) {
+                        try {
+                            listState.animateScrollToItem(channelMessages.size - 1)
+                        } catch (e: Exception) {
+                            listState.scrollToItem(channelMessages.size - 1)
+                        }
+                    }
                 }
             }
 
@@ -629,7 +665,8 @@ fun ChatPanel(
                                             },
                             textStyle = TextStyle(color = colors.foreground, fontSize = 14.sp),
                             cursorBrush = SolidColor(colors.cyan),
-                            singleLine = true
+                            singleLine = false,
+                            maxLines = 5
                     )
 
                     DropdownMenu(

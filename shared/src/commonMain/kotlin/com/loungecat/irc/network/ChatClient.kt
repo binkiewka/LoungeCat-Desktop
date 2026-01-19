@@ -34,4 +34,6 @@ interface ChatClient {
 
     fun getCurrentNickname(): String
     fun updateConfig(newConfig: ServerConfig)
+
+    fun requestSilentWhois(nickname: String)
 }

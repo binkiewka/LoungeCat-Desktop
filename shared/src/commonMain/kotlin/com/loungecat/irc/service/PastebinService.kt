@@ -24,9 +24,13 @@ object PastebinService {
      * Check if a message should be pasted instead of sent directly.
      * @return true if message is too long or has too many lines
      */
-    fun shouldPaste(message: String): Boolean {
+    fun shouldPaste(
+            message: String,
+            maxLength: Int = MAX_DIRECT_MESSAGE_LENGTH,
+            maxLines: Int = MAX_LINES_DIRECT
+    ): Boolean {
         val lineCount = message.count { it == '\n' } + 1
-        return message.length > MAX_DIRECT_MESSAGE_LENGTH || lineCount > MAX_LINES_DIRECT
+        return message.length > maxLength || lineCount > maxLines
     }
 
     /**
