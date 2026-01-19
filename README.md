@@ -11,6 +11,7 @@
 - **Responsive Layout**: Fluidly adapts to different window sizes.
 - **Split View**: View multiple channels side-by-side. Right-click any channel to "Open in Split View" for efficient multitasking.
 - **Drag & Drop**: Easily reorganize server and channel tabs with intuitive drag gestures.
+- **Single Instance Lock**: Prevents accidental multiple instances of the application.
 - **Rich Media**:
   - **Inline Image Previews**: Automatically displays previews for image links (can be toggled).
   - **Formatted Text**: Full support for IRC colors, bold, italic, and underline (mIRC codes).
@@ -49,30 +50,45 @@
   - **Persistent Scrollback**: Locally caches chat history so you never miss a conversation after a restart.
 - **User List Improvements**:
   - **Away Status**: Users marked as 'Away' are visually dimmed. Hover to see their away message.
+  - **WHOIS Tooltip**: Hover over any nickname to see their WHOIS information (real name, server, idle time) in a tooltip.
   - **Channel Modes**: Clear icons for Ops, Voice, and other user modes.
 - **Tab Completion**: Intelligent auto-completion for nicknames, commands, and channels. (Tab / Shift+Tab to cycle).
-- **Pastebin Integration**: Automatically offers to upload long messages to `0x0.st` to avoid flooding channels.
+- **History & Logging**:
+  - **Persistent Scrollback**: Locally caches chat history so you never miss a conversation.
+  - **History Replay**: Automatically loads the last `n` lines (configurable) when you join a channel.
+  - **Topic Persistence**: Remembers channel topics even after restarting.
+- **Smart Auto-Scroll**: Intelligent scrolling behavior that pauses when you read history and resumes when you catch up.
+- **Pastebin Integration**: Automatically uploads messages exceeding your configured limit to `0x0.st`. (Default: 400 chars).
 - **Search & Exports**:
-  - **Searchable Logs**: Quickly find past messages.
-  - **Export Chat**: Export conversation logs to Text, HTML, or JSON formats.
+  - **Searchable Logs**: Quickly find past messages in the app.
+  - **Text Logging**: Automatically saves chat history to plain text files (`logs/Server/Channel.log`) for easy archiving.
+  - **Export Chat**: Export current conversation logs to Text, HTML, or JSON formats.
 
 ### 🔌 Connectivity & Security
 
-- **Multi-Server Support**: Connect to multiple IRC networks simultaneously.
+- **Multi-Protocol Support**:
+  - **IRC**: Full support for standard IRC networks.
+  - **Matrix (Experimental)**: Connect to Matrix homeservers using your access token.
 - **Proxy Support**:
   - **SOCKS4/5** and **HTTP** proxy support for privacy and bypassing restrictions.
   - **Authentication**: Full support for proxy username/password authentication.
   - Configure proxies per-server for granular control.
-- **Robust Security**:
+  - Configure proxies per-server for granular control.
+- **Privacy & Security**:
+  - **Link Preview Privacy**:
+    - **Proxy Support**: Fetch previews through a proxy to hide your IP.
+    - **Configurable**: Choose whether to process links from everyone or just yourself.
   - **SSL/TLS**: Secure connections to IRC servers.
   - **Certificate Pinning**: Pin server SSL certificates for maximum security (TOFU - Trust On First Use).
   - **SASL Authentication**: Securely identify with services (NickServ) during connection.
+- **Service Message Routing**: cleans up your chat by routing messages from NickServ, ChanServ, etc., to dedicated windows.
 - **NickServ Integration**: Auto-identify with NickServ upon connecting.
 
 ### 🔔 Notifications & Alerts
 
 - **Desktop Notifications**: Native system notifications for mentions and private messages.
 - **Sound Alerts**: Customizable sound effects for mentions, messages, and connection events.
+- **Update Notifier**: Automatically checks for new versions on startup and notifies you of updates.
 - **Custom Highlights**: Define custom words or regex patterns to trigger highlights and notifications.
 
 ### ⚡ Power User Tools
