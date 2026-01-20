@@ -59,6 +59,25 @@ class IrcClient(
 
     override suspend fun connect() {
         try {
+            // Clean up any existing client before creating a new one (important for reconnects)
+            eventListener?.let { listener ->
+                try {
+                    client?.eventManager?.unregisterEventListener(listener)
+                } catch (e: Exception) {
+                    Logger.e("IrcClient", "Error unregistering old event listener", e)
+                }
+            }
+            eventListener = null
+
+            client?.let { oldClient ->
+                try {
+                    oldClient.shutdown("Reconnecting")
+                } catch (e: Exception) {
+                    Logger.e("IrcClient", "Error shutting down old client", e)
+                }
+            }
+            client = null
+
             Logger.d("IrcClient", "=== CONNECTION ATTEMPT START ===")
             Logger.d("IrcClient", "Server: ${config.hostname}:${config.port}")
             Logger.d("IrcClient", "SSL: ${config.useSsl}, Nickname: ${config.nickname}")
@@ -358,110 +377,6 @@ class IrcClient(
                                         type = MessageType.SERVER
                                 )
                         )
-                    }
-
-                    // Execute on-connect commands
-                    // Run these *before* auto-join, so we can auth with services if needed
-                    if (config.onConnectCommands.isNotBlank()) {
-                        val commands =
-                                config.onConnectCommands.lines().map { it.trim() }.filter {
-                                    it.isNotEmpty()
-                                }
-                        Logger.d(
-                                "IrcClient",
-                                "Executing on-connect commands: ${commands.size} commands"
-                        )
-
-                        commands.forEach { cmd ->
-                            try {
-                                // Ensure command logic handles both "/msg" and "msg" styles common
-                                // in configs
-                                val commandToParse = if (cmd.startsWith("/")) cmd else "/$cmd"
-
-                                when (val parsed = IrcCommandParser.parse(commandToParse)) {
-                                    is IrcCommand.Message -> {
-                                        client?.sendRawLine(
-                                                "PRIVMSG ${parsed.target} :${parsed.message}"
-                                        )
-                                    }
-                                    is IrcCommand.NickServ -> {
-                                        val args =
-                                                if (parsed.args.isNotBlank()) parsed.args
-                                                else "HELP"
-                                        client?.sendRawLine("PRIVMSG NickServ :$args")
-                                    }
-                                    is IrcCommand.ChanServ -> {
-                                        val args =
-                                                if (parsed.args.isNotBlank()) parsed.args
-                                                else "HELP"
-                                        client?.sendRawLine("PRIVMSG ChanServ :$args")
-                                    }
-                                    is IrcCommand.MemoServ -> {
-                                        val args =
-                                                if (parsed.args.isNotBlank()) parsed.args
-                                                else "HELP"
-                                        client?.sendRawLine("PRIVMSG MemoServ :$args")
-                                    }
-                                    is IrcCommand.Identify -> {
-                                        client?.sendRawLine(
-                                                "PRIVMSG NickServ :IDENTIFY ${parsed.args}"
-                                        )
-                                    }
-                                    is IrcCommand.Mode -> {
-                                        client?.sendRawLine("MODE ${parsed.modeString}")
-                                    }
-                                    is IrcCommand.Oper -> {
-                                        client?.sendRawLine("OPER ${parsed.args}")
-                                    }
-                                    is IrcCommand.Raw -> {
-                                        client?.sendRawLine(parsed.command)
-                                    }
-                                    // For commands not explicitly mishandled above, or Unknown, try
-                                    // to send as raw
-                                    // This covers generic cases or cases where the parser didn't
-                                    // match perfectly but it's valid raw irc
-                                    else -> {
-                                        // Fallback: If it was parsed as Unknown, it might be RAW.
-                                        // But if we forced a slash, we should strip it if it wasn't
-                                        // there originally?
-                                        // If user typed "PRIVMSG #foo :bar", added /, becomes
-                                        // "/PRIVMSG", parser says Unknown.
-                                        // We should send "PRIVMSG #foo :bar".
-
-                                        // Use the original cmd string, but ensure no leading slash
-                                        // for raw sending if it's not a client command
-                                        val rawCmd =
-                                                if (cmd.startsWith("/")) cmd.substring(1) else cmd
-                                        client?.sendRawLine(rawCmd)
-                                    }
-                                }
-
-                                // Small delay to ensure server processes auth before join
-                                kotlinx.coroutines.delay(500)
-                            } catch (e: Exception) {
-                                Logger.e(
-                                        "IrcClient",
-                                        "Failed to execute on-connect command: $cmd",
-                                        e
-                                )
-                            }
-                        }
-                    }
-
-                    // Auto-join channels
-                    if (config.autoJoinChannels.isNotBlank()) {
-                        val channelsToJoin =
-                                config.autoJoinChannels.split(",").map { it.trim() }.filter {
-                                    it.isNotEmpty()
-                                }
-                        Logger.d("IrcClient", "Auto-joining channels: $channelsToJoin")
-                        channelsToJoin.forEach { channel ->
-                            try {
-                                client?.addChannel(channel)
-                            } catch (e: Exception) {
-                                Logger.e("IrcClient", "Failed to auto-join channel: $channel", e)
-                            }
-                        }
                     }
                 }
             } catch (e: Exception) {
@@ -1236,12 +1151,12 @@ class IrcClient(
                         }
 
                         // Server Information / MOTD / Welcome
-                        // Server Information / MOTD / Welcome
-                        1,
+                        // Note: Numeric 1 (RPL_WELCOME) has its own dedicated handler below for
+                        // auto-join
                         2,
                         3,
                         4,
-                        5, // Welcome sequence
+                        5, // Welcome sequence (excluding 1 which is handled separately)
                         251,
                         252,
                         253,
@@ -1415,7 +1330,7 @@ class IrcClient(
                                             }
                                         }
                                         // Brief delay between commands to avoid flood
-                                        kotlinx.coroutines.delay(200)
+                                        kotlinx.coroutines.delay(500)
                                     } catch (e: Exception) {
                                         Logger.e(
                                                 "IrcClient",
@@ -1426,8 +1341,26 @@ class IrcClient(
                                 }
                             }
 
-                            // Auto-Join Channels
-                            autoJoinChannelList.forEach { channelName -> joinChannel(channelName) }
+                            // Auto-Join Channels with delay to prevent flood
+                            if (autoJoinChannelList.isNotEmpty()) {
+                                Logger.d(
+                                        "IrcClient",
+                                        "Auto-joining ${autoJoinChannelList.size} channels"
+                                )
+                                autoJoinChannelList.forEach { channelName ->
+                                    try {
+                                        joinChannel(channelName)
+                                        // Delay between joins to prevent excessive flooding
+                                        kotlinx.coroutines.delay(500)
+                                    } catch (e: Exception) {
+                                        Logger.e(
+                                                "IrcClient",
+                                                "Failed to auto-join channel: $channelName",
+                                                e
+                                        )
+                                    }
+                                }
+                            }
                         }
                         372, 375, 376 -> {
                             if (!hasConnectedBefore) {
