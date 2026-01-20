@@ -43,7 +43,7 @@ fun ChannelPane(
         val connectionStates by connectionManager.connectionStates.collectAsState()
         val connection = connectionStates[serverId]
         // Accessing users via connection directly to ensure we get users for the specific server
-        val channel = connection?.channels?.find { it.name == channelName }
+        val channel = connection?.channels?.find { it.name.equals(channelName, ignoreCase = true) }
         val channelUsers = channel?.users ?: emptyList()
         val serverName = connection?.config?.serverName ?: connection?.config?.hostname ?: ""
         val topic = channel?.topic

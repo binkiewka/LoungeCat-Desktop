@@ -100,7 +100,7 @@ class TabCompletionHelper {
         // Find word boundaries at cursor
         wordStart = findWordStart(input, cursorPosition)
         wordEnd = findWordEnd(input, cursorPosition)
-        currentPrefix = input.substring(wordStart, cursorPosition).lowercase()
+        currentPrefix = input.substring(wordStart, cursorPosition)
         currentCursorPosition = cursorPosition
 
         // Store state for cycling

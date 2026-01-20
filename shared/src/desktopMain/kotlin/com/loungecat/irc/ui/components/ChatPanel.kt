@@ -493,7 +493,11 @@ fun ChatPanel(
                                                                         .getConnection(serverId)
                                                                         ?.channels
                                                                         ?.find {
-                                                                            it.name == channelName
+                                                                            it.name.equals(
+                                                                                    channelName,
+                                                                                    ignoreCase =
+                                                                                            true
+                                                                            )
                                                                         }
                                                                         ?.users
                                                                         ?: emptyList()
@@ -537,10 +541,15 @@ fun ChatPanel(
                                                         completed?.let {
                                                             // Update text and move cursor to end
                                                             // (simplification)
+                                                            val newCursorPos =
+                                                                    tabCompletionHelper
+                                                                            .getNewCursorPosition(
+                                                                                    it
+                                                                            )
                                                             messageInput =
                                                                     TextFieldValue(
                                                                             it,
-                                                                            TextRange(it.length)
+                                                                            TextRange(newCursorPos)
                                                                     )
                                                         }
                                                         true
