@@ -1245,6 +1245,20 @@ class DesktopConnectionManager {
     private fun updateChannels(serverId: Long, channels: Map<String, Channel>) {
         val channelList = channels.values.toList()
 
+        // Debug logging for user list sync
+        Logger.d(
+                "DesktopConnectionManager",
+                "updateChannels for server $serverId. Channel count: ${channelList.size}"
+        )
+        channelList.forEach { chan ->
+            if (chan.users.isNotEmpty()) {
+                Logger.d(
+                        "DesktopConnectionManager",
+                        "Channel ${chan.name} has ${chan.users.size} users."
+                )
+            }
+        }
+
         _connections.update { currentConnections ->
             val connection = currentConnections[serverId] ?: return@update currentConnections
             val updatedConnection = connection.copy(channels = channelList)

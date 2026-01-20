@@ -499,6 +499,10 @@ class IrcClient(
             try {
                 scope.launch {
                     val channelName = event.channel.name
+                    Logger.d(
+                            "IrcClient",
+                            "DEBUG: onChannelJoin event for $channelName (User: ${event.user.nick})"
+                    )
 
                     if (event.user.nick == client?.nick) {
                         initialJoinChannels.add(channelName)
@@ -680,7 +684,7 @@ class IrcClient(
                     val channelName = event.channel.name
                     Logger.d(
                             "IrcClient",
-                            ">>> ChannelNamesUpdatedEvent for $channelName: ${event.channel.users.size} users"
+                            ">>> ChannelNamesUpdatedEvent for $channelName: ${event.channel.users.size} users. Names: ${event.channel.users.joinToString { it.nick }}"
                     )
                     updateChannelUsers(event.channel)
                     initialJoinChannels.remove(channelName)
@@ -871,16 +875,33 @@ class IrcClient(
 
         private fun updateChannelUsers(channel: KittehChannel) {
             scope.launch {
+                Logger.d(
+                        "IrcClient",
+                        "DEBUG: updateChannelUsers called for ${channel.name}. Kitteh reports ${channel.users.size} users."
+                )
                 val users =
                         channel.users.map { user ->
                             ChannelUser(nickname = user.nick, modes = getUserModes(channel, user))
                         }
 
+                Logger.d(
+                        "IrcClient",
+                        "DEBUG: Mapped users for ${channel.name}: ${users.joinToString { it.nickname }}"
+                )
+
                 _channels.update { channels ->
                     val existingChannel = channels[channel.name]
                     if (existingChannel != null) {
+                        Logger.d(
+                                "IrcClient",
+                                "DEBUG: Found channel ${channel.name} in state. Updating users."
+                        )
                         channels + (channel.name to existingChannel.copy(users = users))
                     } else {
+                        Logger.d(
+                                "IrcClient",
+                                "DEBUG: Channel ${channel.name} NOT found in state. Keys: ${channels.keys}"
+                        )
                         channels
                     }
                 }
