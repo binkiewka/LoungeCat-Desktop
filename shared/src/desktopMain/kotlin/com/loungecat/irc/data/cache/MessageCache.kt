@@ -56,7 +56,21 @@ object MessageCache {
             if (file?.exists() == true) {
                 val content = file.readText()
                 val cached = json.decodeFromString<CachedChannel>(content)
-                val allMessages = cached.messages.map { it.toIncomingMessage() }
+
+                // Map messages safely - if one fails (e.g. invalid type enum), skip it but keep
+                // others
+                val allMessages =
+                        cached.messages.mapNotNull { cachedMsg ->
+                            try {
+                                cachedMsg.toIncomingMessage()
+                            } catch (e: Exception) {
+                                Logger.e(
+                                        "MessageCache",
+                                        "Skipping malformed message definition in $channelName: ${e.message}"
+                                )
+                                null
+                            }
+                        }
 
                 // Calculate pagination - offset from end, return in chronological order
                 val endIndex = (allMessages.size - offset).coerceAtLeast(0)

@@ -282,12 +282,7 @@ fun ChatPanel(
             val isLoadingOlder by connectionManager.isLoadingOlderMessages.collectAsState()
 
             // Auto-scroll logic
-            // Initial scroll to bottom when panel opens (fixes Split View scroll issue)
-            LaunchedEffect(Unit) {
-                if (channelMessages.isNotEmpty()) {
-                    listState.scrollToItem(channelMessages.size - 1)
-                }
-            }
+            var hasInitialScrolled by remember(channelName) { mutableStateOf(false) }
 
             // Mark as read when active
             LaunchedEffect(isActive, channelMessages.size) {
@@ -295,31 +290,43 @@ fun ChatPanel(
                     connectionManager.markAsRead(serverId, channelName)
                 }
             }
-            LaunchedEffect(channelMessages.size) {
-                if (channelMessages.isNotEmpty() && !isLoadingOlder) {
-                    val lastItem = channelMessages.last()
 
-                    val isSelf =
-                            when (lastItem) {
-                                is ChatUiItem.SingleMessage -> lastItem.message.isSelf
-                                is ChatUiItem.GroupedEvents -> lastItem.events.any { it.isSelf }
-                            }
-
-                    // Check if we are currently at the bottom (or close to it)
-                    val layoutInfo = listState.layoutInfo
-                    val totalItemsCount = layoutInfo.totalItemsCount
-                    val lastVisibleItemIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-
-                    // If the user was viewing the previous last item, they are "at bottom"
-                    // Allow a margin of error (e.g. 3 items for better tolerance)
-                    val isAtBottom =
-                            lastVisibleItemIndex >= totalItemsCount - 3 || totalItemsCount <= 1
-
-                    if (isAtBottom || isSelf) {
+            LaunchedEffect(channelMessages.size, channelName) {
+                if (channelMessages.isNotEmpty()) {
+                    if (!hasInitialScrolled) {
                         try {
-                            listState.animateScrollToItem(channelMessages.size - 1)
-                        } catch (e: Exception) {
+                            delay(50) // Wait for layout to settle, critical for Windows
                             listState.scrollToItem(channelMessages.size - 1)
+                            hasInitialScrolled = true
+                        } catch (e: Exception) {
+                            // Ignore cancellation
+                        }
+                    } else if (!isLoadingOlder) {
+                        val lastItem = channelMessages.last()
+
+                        val isSelf =
+                                when (lastItem) {
+                                    is ChatUiItem.SingleMessage -> lastItem.message.isSelf
+                                    is ChatUiItem.GroupedEvents -> lastItem.events.any { it.isSelf }
+                                }
+
+                        // Check if we are currently at the bottom (or close to it)
+                        val layoutInfo = listState.layoutInfo
+                        val totalItemsCount = layoutInfo.totalItemsCount
+                        val lastVisibleItemIndex =
+                                layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+
+                        // If the user was viewing the previous last item, they are "at bottom"
+                        // Allow a margin of error (e.g. 3 items for better tolerance)
+                        val isAtBottom =
+                                lastVisibleItemIndex >= totalItemsCount - 3 || totalItemsCount <= 1
+
+                        if (isAtBottom || isSelf) {
+                            try {
+                                listState.animateScrollToItem(channelMessages.size - 1)
+                            } catch (e: Exception) {
+                                listState.scrollToItem(channelMessages.size - 1)
+                            }
                         }
                     }
                 }
@@ -409,7 +416,7 @@ fun ChatPanel(
                                         coloredNicknames = userPreferences.coloredNicknames,
                                         whoisInfo = whoisCache,
                                         onRequestWhois = { nick ->
-                                            connectionManager.requestWhois(serverId, nick)
+                                            connectionManager.requestSilentWhois(serverId, nick)
                                         },
                                         selectionController = selectionController,
                                         selectionHighlightColor =

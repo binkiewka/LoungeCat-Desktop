@@ -38,9 +38,10 @@ fun AppTooltip(text: String, content: @Composable () -> Unit) {
                 },
                 delayMillis = 600,
                 tooltipPlacement =
-                        TooltipPlacement.CursorPoint(
-                                alignment = Alignment.TopCenter,
-                                offset = DpOffset(0.dp, (-16).dp) // Position above the cursor/icon
+                        TooltipPlacement.ComponentRect(
+                                anchor = Alignment.BottomCenter,
+                                alignment = Alignment.BottomCenter,
+                                offset = DpOffset(0.dp, 8.dp)
                         ),
                 content = content
         )

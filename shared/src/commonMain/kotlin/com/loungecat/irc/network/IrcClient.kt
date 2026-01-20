@@ -507,6 +507,8 @@ class IrcClient(
                                     (channelName to
                                             Channel(name = channelName, type = ChannelType.CHANNEL))
                         }
+                        // Update user list immediately - Kitteh should have users from NAMES
+                        updateChannelUsers(event.channel)
                     } else {
                         if (!initialJoinChannels.contains(channelName)) {
                             _messages.emit(
@@ -659,11 +661,32 @@ class IrcClient(
             try {
                 scope.launch {
                     val channelName = event.channel.name
+                    Logger.d(
+                            "IrcClient",
+                            ">>> ChannelUsersUpdatedEvent for $channelName: ${event.channel.users.size} users"
+                    )
                     updateChannelUsers(event.channel)
                     initialJoinChannels.remove(channelName)
                 }
             } catch (e: Exception) {
                 Logger.e("IrcClient", ">>> EVENT HANDLER CRASHED: onChannelUsersUpdated", e)
+            }
+        }
+
+        @Handler
+        fun onChannelNamesUpdated(event: ChannelNamesUpdatedEvent) {
+            try {
+                scope.launch {
+                    val channelName = event.channel.name
+                    Logger.d(
+                            "IrcClient",
+                            ">>> ChannelNamesUpdatedEvent for $channelName: ${event.channel.users.size} users"
+                    )
+                    updateChannelUsers(event.channel)
+                    initialJoinChannels.remove(channelName)
+                }
+            } catch (e: Exception) {
+                Logger.e("IrcClient", ">>> EVENT HANDLER CRASHED: onChannelNamesUpdated", e)
             }
         }
 
