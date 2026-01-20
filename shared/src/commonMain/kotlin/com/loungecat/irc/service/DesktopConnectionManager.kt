@@ -633,7 +633,7 @@ class DesktopConnectionManager {
         // Reset AFK timer on user activity
 
         val serverId = _currentServerId.value ?: return
-        val channelName = _currentChannel.value
+        val channelName = _currentChannel.value ?: ""
 
         managerScope.launch { processCommand(serverId, channelName, message) }
     }
@@ -653,42 +653,65 @@ class DesktopConnectionManager {
         managerScope.launch { connections[serverId]?.client?.requestSilentWhois(nickname) }
     }
 
-    private suspend fun processCommand(serverId: Long, channelName: String?, message: String) {
+    // --- Message Processing & Sending ---
+    //
+
+    suspend fun uploadImage(fileBytes: ByteArray, filename: String? = null): String? {
+        val apiKey = _userPreferences.value.imgbbApiKey
+        if (apiKey.isNullOrBlank()) {
+            Logger.e("DesktopConnectionManager", "ImgBB API Key not set")
+            // Ideally notify user via a system message or error event?
+            // For now, we rely on the UI to check or handle the null return.
+            return null
+        }
+        return ImgBbService.uploadImage(apiKey, fileBytes, filename)
+    }
+
+    private suspend fun processCommand(serverId: Long, target: String, message: String) {
         val connection = connections[serverId] ?: return
-        when (val command = IrcCommandParser.parse(message)) {
-            is IrcCommand.NotACommand -> {
-                if (channelName != null) {
-                    sendMessageOrUsePastebin(connection, channelName, message)
+
+        // Check for URL Shortening
+        var finalMessage = message
+        val prefs = _userPreferences.value
+        if (prefs.urlShorteningEnabled) {
+            val urls = UrlExtractor.extractUrls(message)
+            var processedMessage = message
+            urls.forEach { url ->
+                if (url.length > prefs.urlShorteningThreshold) {
+                    val shortened = UrlShortenerService.shortenUrl(url)
+                    if (shortened != url) {
+                        processedMessage = processedMessage.replace(url, shortened)
+                    }
                 }
+            }
+            finalMessage = processedMessage
+        }
+
+        when (val command = IrcCommandParser.parse(finalMessage)) {
+            is IrcCommand.NotACommand -> {
+                sendMessageOrUsePastebin(connection, target, finalMessage)
             }
             is IrcCommand.Join -> joinChannel(serverId, command.channel)
             is IrcCommand.Part -> {
-                val target = command.channel ?: channelName
-                if (target != null) {
-                    if (target.startsWith("#") ||
-                                    target.startsWith("&") ||
-                                    target.startsWith("+") ||
-                                    target.startsWith("!")
-                    ) {
-                        connection.client.sendRawCommand(
-                                "PART $target :${command.message ?: "Leaving"}"
-                        )
-                        updateSavedChannels(serverId, target, false)
-                    } else {
-                        // Close query locally
-                        connection.client.closeQuery(target)
-                    }
+                val partTarget = command.channel ?: target
+                if (partTarget.startsWith("#") ||
+                                partTarget.startsWith("&") ||
+                                partTarget.startsWith("+") ||
+                                partTarget.startsWith("!")
+                ) {
+                    connection.client.sendRawCommand(
+                            "PART $partTarget :${command.message ?: "Leaving"}"
+                    )
+                    updateSavedChannels(serverId, partTarget, false)
+                } else {
+                    // Close query locally
+                    connection.client.closeQuery(partTarget)
                 }
             }
             is IrcCommand.Message ->
                     sendMessageOrUsePastebin(connection, command.target, command.message)
             is IrcCommand.Action -> {
-                if (channelName != null) {
-                    connection.client.sendMessage(
-                            channelName,
-                            "\u0001ACTION ${command.action}\u0001"
-                    )
-                }
+                connection.client.sendMessage(target, "\u0001ACTION ${command.action}\u0001")
             }
             is IrcCommand.Nick -> connection.client.sendRawCommand("NICK ${command.newNick}")
             is IrcCommand.Identify -> {
@@ -697,11 +720,7 @@ class DesktopConnectionManager {
 
                 val msg = "IDENTIFY ${command.args}"
                 connection.client.sendRawCommand("PRIVMSG NickServ :$msg")
-                addSystemMessage(
-                        serverId,
-                        channelName ?: "* ${connection.config.serverName}",
-                        "Sent identification to NickServ"
-                )
+                addSystemMessage(serverId, target, "Sent identification to NickServ")
             }
             is IrcCommand.Whois -> connection.client.sendRawCommand("WHOIS ${command.nickname}")
             is IrcCommand.Quit -> {
@@ -713,85 +732,59 @@ class DesktopConnectionManager {
             }
             is IrcCommand.Raw -> connection.client.sendRawCommand(command.command)
             is IrcCommand.Clear -> {
-                if (channelName != null) {
-                    clearChannelHistory(serverId, channelName)
-                }
+                clearChannelHistory(serverId, target)
             }
             is IrcCommand.Help -> {
-                if (channelName != null) {
-                    addSystemMessage(serverId, channelName, IrcCommandParser.getHelpText())
-                }
+                addSystemMessage(serverId, target, IrcCommandParser.getHelpText())
             }
             is IrcCommand.Ignore -> {
                 ignoreUser(command.nickname)
-                if (channelName != null) {
-                    addSystemMessage(serverId, channelName, "Ignored user: ${command.nickname}")
-                }
+                addSystemMessage(serverId, target, "Ignored user: ${command.nickname}")
             }
             is IrcCommand.Unignore -> {
                 removeIgnoredUser(command.nickname)
-                if (channelName != null) {
-                    addSystemMessage(serverId, channelName, "Unignored user: ${command.nickname}")
-                }
+                addSystemMessage(serverId, target, "Unignored user: ${command.nickname}")
             }
             is IrcCommand.Kick -> {
-                if (channelName != null) {
-                    val kickCmd =
-                            if (command.reason != null) {
-                                "KICK $channelName ${command.nickname} :${command.reason}"
-                            } else {
-                                "KICK $channelName ${command.nickname}"
-                            }
-                    connection.client.sendRawCommand(kickCmd)
-                }
+                val kickCmd =
+                        if (command.reason != null) {
+                            "KICK $target ${command.nickname} :${command.reason}"
+                        } else {
+                            "KICK $target ${command.nickname}"
+                        }
+                connection.client.sendRawCommand(kickCmd)
             }
             is IrcCommand.Ban -> {
-                if (channelName != null) {
-                    connection.client.sendRawCommand("MODE $channelName +b ${command.nickname}!*@*")
-                }
+                connection.client.sendRawCommand("MODE $target +b ${command.nickname}!*@*")
             }
             is IrcCommand.Unban -> {
-                if (channelName != null) {
-                    connection.client.sendRawCommand("MODE $channelName -b ${command.nickname}!*@*")
-                }
+                connection.client.sendRawCommand("MODE $target -b ${command.nickname}!*@*")
             }
             is IrcCommand.Voice -> {
-                if (channelName != null) {
-                    connection.client.sendRawCommand("MODE $channelName +v ${command.nickname}")
-                }
+                connection.client.sendRawCommand("MODE $target +v ${command.nickname}")
             }
             is IrcCommand.Devoice -> {
-                if (channelName != null) {
-                    connection.client.sendRawCommand("MODE $channelName -v ${command.nickname}")
-                }
+                connection.client.sendRawCommand("MODE $target -v ${command.nickname}")
             }
             is IrcCommand.Op -> {
-                if (channelName != null) {
-                    connection.client.sendRawCommand("MODE $channelName +o ${command.nickname}")
-                }
+                connection.client.sendRawCommand("MODE $target +o ${command.nickname}")
             }
             is IrcCommand.Deop -> {
-                if (channelName != null) {
-                    connection.client.sendRawCommand("MODE $channelName -o ${command.nickname}")
-                }
+                connection.client.sendRawCommand("MODE $target -o ${command.nickname}")
             }
             is IrcCommand.Mode -> {
-                if (channelName != null) {
-                    connection.client.sendRawCommand("MODE $channelName ${command.modeString}")
-                }
+                connection.client.sendRawCommand("MODE $target ${command.modeString}")
             }
             is IrcCommand.Topic -> {
-                if (channelName != null) {
-                    if (command.topic != null) {
-                        connection.client.sendRawCommand("TOPIC $channelName :${command.topic}")
-                    } else {
-                        connection.client.sendRawCommand("TOPIC $channelName")
-                    }
+                if (command.topic != null) {
+                    connection.client.sendRawCommand("TOPIC $target :${command.topic}")
+                } else {
+                    connection.client.sendRawCommand("TOPIC $target")
                 }
             }
             is IrcCommand.Invite -> {
                 connection.client.sendRawCommand(
-                        "INVITE ${command.nickname} ${command.channel ?: channelName ?: ""}"
+                        "INVITE ${command.nickname} ${command.channel ?: target}"
                 )
             }
             is IrcCommand.List -> {
@@ -800,7 +793,7 @@ class DesktopConnectionManager {
                 )
             }
             is IrcCommand.Names -> {
-                connection.client.sendRawCommand("NAMES ${command.channel ?: channelName ?: ""}")
+                connection.client.sendRawCommand("NAMES ${command.channel ?: target}")
             }
             is IrcCommand.Notice -> {
                 connection.client.sendRawCommand("NOTICE ${command.target} :${command.message}")
@@ -812,12 +805,10 @@ class DesktopConnectionManager {
                 }
             }
             is IrcCommand.Cycle -> {
-                val target = command.channel ?: channelName
-                if (target != null) {
-                    connection.client.partChannel(target)
-                    delay(200) // Brief delay to ensure part is processed
-                    connection.client.joinChannel(target)
-                }
+                val cycleTarget = command.channel ?: target
+                connection.client.partChannel(cycleTarget)
+                delay(200) // Brief delay to ensure part is processed
+                connection.client.joinChannel(cycleTarget)
             }
             is IrcCommand.Away -> {
                 connection.client.sendRawCommand(
@@ -877,22 +868,16 @@ class DesktopConnectionManager {
             is IrcCommand.Saje ->
                     connection.client.sendRawCommand("SAJE ${command.nickname} ${command.channel}")
             is IrcCommand.KickBan -> {
-                if (channelName != null) {
-                    connection.client.sendRawCommand("MODE $channelName +b ${command.nickname}!*@*")
-                    val kickReason = command.reason ?: "Requested"
-                    connection.client.sendRawCommand(
-                            "KICK $channelName ${command.nickname} :$kickReason"
-                    )
-                }
+                connection.client.sendRawCommand("MODE $target +b ${command.nickname}!*@*")
+                val kickReason = command.reason ?: "Requested"
+                connection.client.sendRawCommand("KICK $target ${command.nickname} :$kickReason")
             }
             is IrcCommand.Ctcp -> {
                 // CTCP is just a PRIVMSG with \u0001 wrapping
                 connection.client.sendMessage(command.target, "\u0001${command.message}\u0001")
             }
             is IrcCommand.Unknown -> {
-                if (channelName != null) {
-                    addSystemMessage(serverId, channelName, "Unknown command: /${command.command}")
-                }
+                addSystemMessage(serverId, target, "Unknown command: /${command.command}")
             }
             else -> {}
         }
@@ -1585,6 +1570,18 @@ class DesktopConnectionManager {
     fun untrustUserForPreviews(nickname: String) {
         val lower = nickname.lowercase()
         updatePreference { it.copy(trustedPreviewUsers = it.trustedPreviewUsers - lower) }
+    }
+
+    fun setImgbbApiKey(apiKey: String) {
+        updatePreference { it.copy(imgbbApiKey = apiKey) }
+    }
+
+    fun setUrlShorteningEnabled(enabled: Boolean) {
+        updatePreference { it.copy(urlShorteningEnabled = enabled) }
+    }
+
+    fun setUrlShorteningThreshold(threshold: Int) {
+        updatePreference { it.copy(urlShorteningThreshold = threshold) }
     }
 
     fun markAsRead(serverId: Long, channelName: String) {

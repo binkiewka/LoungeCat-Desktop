@@ -75,5 +75,9 @@ data class UserPreferences(
         // Link Preview Security
         val processLinkPreviewsFromOthers: Boolean = false,
         val trustedPreviewUsers: Set<String> = emptySet(),
-        val useProxyForPreviews: Boolean = true
+        val useProxyForPreviews: Boolean = true,
+        // Batch 6: External Services
+        val imgbbApiKey: String? = null,
+        val urlShorteningEnabled: Boolean = true,
+        val urlShorteningThreshold: Int = 200 // Default threshold for shortening
 )

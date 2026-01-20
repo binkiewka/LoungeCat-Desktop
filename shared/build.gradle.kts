@@ -58,6 +58,16 @@ kotlin {
             }
         }
     }
+    targets.all {
+        compilations.all {
+            compileTaskProvider.configure {
+                compilerOptions {
+                    allWarningsAsErrors.set(false)
+                    freeCompilerArgs.add("-Xsuppress-warning=DEPRECATION")
+                }
+            }
+        }
+    }
 }
 
 room {

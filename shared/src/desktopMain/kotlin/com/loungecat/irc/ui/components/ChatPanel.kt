@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.loungecat.irc.ui.components
 
 import androidx.compose.foundation.Image
@@ -11,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -52,6 +55,7 @@ import com.loungecat.irc.ui.util.ChatUiItem
 import com.loungecat.irc.ui.util.flattenToMessages
 import com.loungecat.irc.ui.util.groupMessages
 import com.loungecat.irc.util.InputHistoryHelper
+import com.loungecat.irc.util.Logger
 import com.loungecat.irc.util.SpellCheckRuleMatch
 import com.loungecat.irc.util.SpellChecker
 import com.loungecat.irc.util.TabCompletionHelper
@@ -264,7 +268,9 @@ fun ChatPanel(
                                     shape = androidx.compose.ui.graphics.RectangleShape
                             )
                             .background(colors.background)
-    ) {
+            // TODO: Re-enable drag-and-drop when Compose Multiplatform provides
+            // non-deprecated API (Modifier.dragAndDropTarget)
+            ) {
         Image(
                 painter = painterResource(Res.drawable.logo_transparent),
                 contentDescription = null,
@@ -305,8 +311,9 @@ fun ChatPanel(
                     val lastVisibleItemIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
 
                     // If the user was viewing the previous last item, they are "at bottom"
-                    // Allow a margin of error (e.g. 2 items)
-                    val isAtBottom = lastVisibleItemIndex >= totalItemsCount - 2
+                    // Allow a margin of error (e.g. 3 items for better tolerance)
+                    val isAtBottom =
+                            lastVisibleItemIndex >= totalItemsCount - 3 || totalItemsCount <= 1
 
                     if (isAtBottom || isSelf) {
                         try {
@@ -715,6 +722,68 @@ fun ChatPanel(
                 }
 
                 Spacer(modifier = Modifier.width(8.dp))
+
+                // Image upload button
+                var showFilePicker by remember { mutableStateOf(false) }
+
+                if (showFilePicker) {
+                    LaunchedEffect(Unit) {
+                        scope.launch {
+                            val fileDialog =
+                                    java.awt.FileDialog(
+                                            java.awt.Frame(),
+                                            "Select Image",
+                                            java.awt.FileDialog.LOAD
+                                    )
+                            fileDialog.setFilenameFilter { _, name ->
+                                val ext = name.lowercase()
+                                ext.endsWith(".png") ||
+                                        ext.endsWith(".jpg") ||
+                                        ext.endsWith(".jpeg") ||
+                                        ext.endsWith(".gif") ||
+                                        ext.endsWith(".bmp")
+                            }
+                            fileDialog.isVisible = true
+
+                            val selectedFile =
+                                    if (fileDialog.file != null) {
+                                        java.io.File(fileDialog.directory, fileDialog.file)
+                                    } else null
+
+                            showFilePicker = false
+
+                            selectedFile?.let { file ->
+                                if (file.exists() && file.isFile) {
+                                    val uploadedUrl =
+                                            connectionManager.uploadImage(
+                                                    file.readBytes(),
+                                                    file.name
+                                            )
+                                    if (uploadedUrl != null) {
+                                        val newText =
+                                                if (messageInput.text.isNotEmpty()) {
+                                                    messageInput.text + " " + uploadedUrl
+                                                } else {
+                                                    uploadedUrl
+                                                }
+                                        messageInput =
+                                                TextFieldValue(newText, TextRange(newText.length))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                AppTooltip(text = "Upload Image") {
+                    IconButton(onClick = { showFilePicker = true }) {
+                        Icon(
+                                imageVector = Icons.Default.Image,
+                                contentDescription = "Upload Image",
+                                tint = colors.cyan
+                        )
+                    }
+                }
 
                 AppTooltip(text = "Send Message") {
                     IconButton(

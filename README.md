@@ -59,6 +59,8 @@
   - **Topic Persistence**: Remembers channel topics even after restarting.
 - **Smart Auto-Scroll**: Intelligent scrolling behavior that pauses when you read history and resumes when you catch up.
 - **Pastebin Integration**: Automatically uploads messages exceeding your configured limit to `0x0.st`. (Default: 400 chars).
+- **URL Shortening**: Automatically shortens long URLs (via is.gd) before sending, with configurable threshold.
+- **Image Upload**: Upload images directly to ImgBB via the upload button or paste into chat. The link is automatically inserted.
 - **Search & Exports**:
   - **Searchable Logs**: Quickly find past messages in the app.
   - **Text Logging**: Automatically saves chat history to plain text files (`logs/Server/Channel.log`) for easy archiving.

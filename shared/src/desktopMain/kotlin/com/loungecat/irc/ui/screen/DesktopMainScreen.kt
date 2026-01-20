@@ -102,18 +102,26 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
 
     LaunchedEffect(Unit) {
         val service = com.loungecat.irc.service.UpdateCheckService()
-        val result = service.checkForUpdates()
-        if (result != null && result.hasUpdate) {
-            updateAvailable = result
-            val action =
-                    snackbarHostState.showSnackbar(
-                            message = "New version available: ${result.latestVersion}",
-                            actionLabel = "Download",
-                            duration = SnackbarDuration.Indefinite
-                    )
-            if (action == SnackbarResult.ActionPerformed) {
-                uriHandler.openUri(result.releaseUrl)
+        // Check every 6 hours (initial check + periodic)
+        val checkIntervalMs = 6 * 60 * 60 * 1000L // 6 hours in milliseconds
+        while (true) {
+            val result = service.checkForUpdates()
+            if (result != null &&
+                            result.hasUpdate &&
+                            updateAvailable?.latestVersion != result.latestVersion
+            ) {
+                updateAvailable = result
+                val action =
+                        snackbarHostState.showSnackbar(
+                                message = "New version available: ${result.latestVersion}",
+                                actionLabel = "Download",
+                                duration = SnackbarDuration.Indefinite
+                        )
+                if (action == SnackbarResult.ActionPerformed) {
+                    uriHandler.openUri(result.releaseUrl)
+                }
             }
+            kotlinx.coroutines.delay(checkIntervalMs)
         }
     }
 
@@ -622,6 +630,11 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                 },
                 onUseProxyForPreviewsChange = { connectionManager.setUseProxyForPreviews(it) },
                 onPastebinThresholdChange = { connectionManager.setPastebinThreshold(it) },
+                onImgbbApiKeyChange = { connectionManager.setImgbbApiKey(it) },
+                onUrlShorteningEnabledChange = { connectionManager.setUrlShorteningEnabled(it) },
+                onUrlShorteningThresholdChange = {
+                    connectionManager.setUrlShorteningThreshold(it)
+                },
                 onDismiss = { showSettingsDialog = false }
         )
     }
@@ -1679,6 +1692,9 @@ private fun SettingsDialog(
         onProcessLinkPreviewsFromOthersChange: (Boolean) -> Unit,
         onUseProxyForPreviewsChange: (Boolean) -> Unit,
         onPastebinThresholdChange: (Int) -> Unit,
+        onImgbbApiKeyChange: (String) -> Unit,
+        onUrlShorteningEnabledChange: (Boolean) -> Unit,
+        onUrlShorteningThresholdChange: (Int) -> Unit,
         onDismiss: () -> Unit
 ) {
     val colors = AppColors.current
@@ -2022,6 +2038,107 @@ private fun SettingsDialog(
                                                     cursorColor = colors.cyan
                                             )
                             )
+                        }
+
+                        HorizontalDivider(color = colors.border)
+
+                        // External Services (ImgBB & URL Shortener)
+                        Text(
+                                text = "External Services",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = colors.cyan,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 8.dp)
+                        )
+
+                        // ImgBB API Key
+                        Column {
+                            Text("ImgBB API Key (for image uploads)", color = colors.foreground)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            OutlinedTextField(
+                                    value = userPreferences.imgbbApiKey ?: "",
+                                    onValueChange = { onImgbbApiKeyChange(it) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    placeholder = { Text("Enter API Key", color = colors.comment) },
+                                    colors =
+                                            OutlinedTextFieldDefaults.colors(
+                                                    focusedBorderColor = colors.cyan,
+                                                    unfocusedBorderColor = colors.border,
+                                                    focusedTextColor = colors.foreground,
+                                                    unfocusedTextColor = colors.foreground,
+                                                    cursorColor = colors.cyan
+                                            )
+                            )
+                            Text(
+                                    "Get key from api.imgbb.com",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.comment,
+                                    modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+
+                        // URL Shortening
+                        Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Enable URL Shortening", color = colors.foreground)
+                                Text(
+                                        "Automatically shorten long URLs",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colors.comment
+                                )
+                            }
+                            Switch(
+                                    checked = userPreferences.urlShorteningEnabled,
+                                    onCheckedChange = onUrlShorteningEnabledChange,
+                                    colors =
+                                            SwitchDefaults.colors(
+                                                    checkedThumbColor = colors.green,
+                                                    checkedTrackColor =
+                                                            colors.green.copy(alpha = 0.5f)
+                                            )
+                            )
+                        }
+
+                        if (userPreferences.urlShorteningEnabled) {
+                            Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Shorten Threshold (chars)", color = colors.foreground)
+                                    Text(
+                                            "URLs longer than this will be shortened",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colors.comment
+                                    )
+                                }
+                                OutlinedTextField(
+                                        value = userPreferences.urlShorteningThreshold.toString(),
+                                        onValueChange = {
+                                            val newValue = it.filter { char -> char.isDigit() }
+                                            if (newValue.isNotEmpty()) {
+                                                onUrlShorteningThresholdChange(newValue.toInt())
+                                            }
+                                        },
+                                        modifier = Modifier.width(100.dp),
+                                        singleLine = true,
+                                        colors =
+                                                OutlinedTextFieldDefaults.colors(
+                                                        focusedBorderColor = colors.cyan,
+                                                        unfocusedBorderColor = colors.border,
+                                                        focusedTextColor = colors.foreground,
+                                                        unfocusedTextColor = colors.foreground,
+                                                        cursorColor = colors.cyan
+                                                )
+                                )
+                            }
                         }
 
                         HorizontalDivider(color = colors.border)
