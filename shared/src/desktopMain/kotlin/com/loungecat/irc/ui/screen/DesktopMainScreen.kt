@@ -97,7 +97,6 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
     var updateAvailable by remember {
         mutableStateOf<com.loungecat.irc.data.model.UpdateResult?>(null)
     }
-    val snackbarHostState = remember { SnackbarHostState() }
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
 
     LaunchedEffect(Unit) {
@@ -111,15 +110,6 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                             updateAvailable?.latestVersion != result.latestVersion
             ) {
                 updateAvailable = result
-                val action =
-                        snackbarHostState.showSnackbar(
-                                message = "New version available: ${result.latestVersion}",
-                                actionLabel = "Download",
-                                duration = SnackbarDuration.Indefinite
-                        )
-                if (action == SnackbarResult.ActionPerformed) {
-                    uriHandler.openUri(result.releaseUrl)
-                }
             }
             kotlinx.coroutines.delay(checkIntervalMs)
         }
@@ -246,6 +236,7 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                                 )
                             }
                         }
+
                         AppTooltip(text = "Collapse Sidebar") {
                             IconButton(
                                     onClick = { isSidebarVisible = false },
@@ -427,6 +418,45 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                             listState = sidebarListState,
                             modifier = Modifier.align(Alignment.CenterEnd)
                     )
+                }
+
+                // Update Button at Bottom of Sidebar
+                if (updateAvailable?.hasUpdate == true) {
+                    HorizontalDivider(color = colors.border, thickness = 1.dp)
+                    Box(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                        Button(
+                                onClick = {
+                                    updateAvailable?.releaseUrl?.let { url ->
+                                        uriHandler.openUri(url)
+                                    }
+                                },
+                                colors =
+                                        ButtonDefaults.buttonColors(
+                                                containerColor = colors.orange.copy(alpha = 0.8f),
+                                                contentColor = Color.White
+                                        ),
+                                modifier = Modifier.fillMaxWidth().height(40.dp),
+                                shape = RoundedCornerShape(4.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp)
+                        ) {
+                            Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                        imageVector = Icons.Default.SystemUpdate,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                        text = "Update Available",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
                 }
             } else {
                 // COLLAPSED SIDEBAR CONTENT (Rail)
@@ -694,18 +724,7 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
     }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-        SnackbarHost(hostState = snackbarHostState) { data ->
-            Snackbar(
-                    snackbarData = data,
-                    containerColor = colors.windowBackground,
-                    contentColor = colors.foreground,
-                    actionColor = colors.cyan,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier =
-                            Modifier.padding(16.dp)
-                                    .border(1.dp, colors.border, RoundedCornerShape(8.dp))
-            )
-        }
+        // Obsolete SnackbarHost removed from here
     }
 }
 

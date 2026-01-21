@@ -14,6 +14,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -28,6 +30,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -474,7 +477,12 @@ fun ChatPanel(
                                                         )
                                                     } else Modifier
                                             )
-                                            .padding(12.dp)
+                                            .padding(
+                                                    start = 12.dp,
+                                                    top = 12.dp,
+                                                    bottom = 12.dp,
+                                                    end = 48.dp
+                                            )
                                             .onPointerEvent(PointerEventType.Press) {
                                                 isKeyboardNavigation = false
                                             }
@@ -692,6 +700,22 @@ fun ChatPanel(
                             maxLines = 5
                     )
 
+                    IconButton(
+                            onClick = {
+                                if (messageInput.text.isNotBlank()) {
+                                    onSendMessage(messageInput.text)
+                                    messageInput = TextFieldValue("")
+                                }
+                            },
+                            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp)
+                    ) {
+                        Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send",
+                                tint = colors.green
+                        )
+                    }
+
                     DropdownMenu(
                             expanded = showSpellCheckMenu,
                             onDismissRequest = { showSpellCheckMenu = false }
@@ -791,32 +815,10 @@ fun ChatPanel(
                     }
                 }
 
-                AppTooltip(text = "Upload Image") {
-                    IconButton(onClick = { showFilePicker = true }) {
-                        Icon(
-                                imageVector = Icons.Default.Image,
-                                contentDescription = "Upload Image",
-                                tint = colors.cyan
-                        )
-                    }
-                }
-
-                AppTooltip(text = "Send Message") {
-                    IconButton(
-                            onClick = {
-                                if (messageInput.text.isNotBlank()) {
-                                    onSendMessage(messageInput.text)
-                                    messageInput = TextFieldValue("")
-                                }
-                            }
-                    ) {
-                        Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "Send",
-                                tint = colors.green
-                        )
-                    }
-                }
+                Button(
+                        onClick = { showFilePicker = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                ) { Text("Image Upload", color = Color.White) }
             }
         }
     }

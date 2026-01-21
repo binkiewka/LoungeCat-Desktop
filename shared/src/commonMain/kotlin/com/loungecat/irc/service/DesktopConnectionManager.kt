@@ -1243,30 +1243,61 @@ class DesktopConnectionManager {
     }
 
     private fun updateChannels(serverId: Long, channels: Map<String, Channel>) {
-        val channelList = channels.values.toList()
+        val newChannelList = channels.values.toList()
 
         // Debug logging for user list sync
         Logger.d(
                 "DesktopConnectionManager",
-                "updateChannels for server $serverId. Channel count: ${channelList.size}"
+                "updateChannels for server $serverId. Channel count: ${newChannelList.size}"
         )
-        channelList.forEach { chan ->
-            if (chan.users.isNotEmpty()) {
-                Logger.d(
-                        "DesktopConnectionManager",
-                        "Channel ${chan.name} has ${chan.users.size} users."
-                )
-            }
-        }
 
         _connections.update { currentConnections ->
             val connection = currentConnections[serverId] ?: return@update currentConnections
-            val updatedConnection = connection.copy(channels = channelList)
+
+            // Create a map of existing channels for state preservation
+            val existingChannelsMap = connection.channels.associateBy { it.name }
+
+            val mergedChannelList =
+                    newChannelList.map { newChannel ->
+                        val existingChannel = existingChannelsMap[newChannel.name]
+                        if (existingChannel != null) {
+                            // Preserve local state from existing channel
+                            newChannel.copy(
+                                    unreadCount = existingChannel.unreadCount,
+                                    hasUnread = existingChannel.hasUnread,
+                                    hasRecentActivity = existingChannel.hasRecentActivity,
+                                    lastActivityTimestamp = existingChannel.lastActivityTimestamp,
+                                    displayName = existingChannel.displayName
+                            )
+                        } else {
+                            newChannel
+                        }
+                    }
+
+            val updatedConnection = connection.copy(channels = mergedChannelList)
             currentConnections + (serverId to updatedConnection)
         }
 
+        // We need to fetch the updated list from the connections map to ensure consistency
+        // or just use our calculated merged list. Using the calculated list is safe here.
+        // However, we need to be careful about race conditions if _connections was updated
+        // elsewhere in parallel? _connections.update is atomic for the map, but we are inside the
+        // update block above.
+        // To be safe and clean, let's re-read the result or just use the logic that we know
+        // applies.
+
+        // Actually, we can just grab the result from the update above? No, update returns the new
+        // map.
+        // Let's just assume our merged list is correct for the UI update.
+
+        // Wait, since we are inside `update`, we can't easily extract the result out.
+        // But we computed `mergedChannelList`.
+        // Let's re-read from _connections to be 100% sure we sync with what was just saved.
+
+        val updatedChannels = _connections.value[serverId]?.channels ?: emptyList()
+
         if (_currentServerId.value == serverId) {
-            _channels.value = channelList
+            _channels.value = updatedChannels
         }
 
         updateServerList()

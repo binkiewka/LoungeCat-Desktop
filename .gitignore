@@ -50,3 +50,5 @@ CLAUDE.md
 .vscode/
 build_appimage.sh
 tests/
+logs/
+.claude/
