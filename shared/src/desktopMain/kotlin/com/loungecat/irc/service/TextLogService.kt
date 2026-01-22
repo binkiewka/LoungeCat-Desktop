@@ -68,18 +68,30 @@ object TextLogService {
             val logFile = File(serverDir, "$safeChannelName.log")
 
             if (logFile.exists()) {
-                // Read file line by line
-                // Ideally this should look at the END of the file efficiently for large logs,
-                // but for now reading all lines and taking last N is simplest.
-                // Optimization: RandomAccessFile could be used for reading from end.
-                // Given the user wants history, let's just use readLines() which is safer than
-                // complex seeking
-                // for variable length UTF-8.
-                val lines = logFile.readLines()
-                val linesToProcess = if (lines.size > limit) lines.takeLast(limit) else lines
-
-                linesToProcess.forEach { line ->
-                    parseLogLine(line, channelName)?.let { messages.add(it) }
+                readLogFile(logFile, limit, channelName, messages)
+            } else {
+                // FALLBACK: Check for legacy filename where '#' might have been replaced by '_'
+                // or just standard legacy sanitization.
+                val legacySafeName = safeChannelName.replace("#", "_")
+                val legacyFile = File(serverDir, "$legacySafeName.log")
+                if (legacyFile.exists()) {
+                    Logger.d("TextLogService", "Found legacy log file: ${legacyFile.name}")
+                    readLogFile(legacyFile, limit, channelName, messages)
+                } else {
+                    // FALLBACK 2: Case-insensitive search
+                    // This is expensive so only do it if direct lookups fail
+                    val foundFile =
+                            serverDir.listFiles()?.find {
+                                it.name.equals("$safeChannelName.log", ignoreCase = true) ||
+                                        it.name.equals("$legacySafeName.log", ignoreCase = true)
+                            }
+                    if (foundFile != null) {
+                        Logger.d(
+                                "TextLogService",
+                                "Found log file via fuzzy search: ${foundFile.name}"
+                        )
+                        readLogFile(foundFile, limit, channelName, messages)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -112,5 +124,22 @@ object TextLogService {
             // Ignore parse errors
         }
         return null
+    }
+    private fun readLogFile(
+            file: File,
+            limit: Int,
+            channelName: String,
+            messages: MutableList<IncomingMessage>
+    ) {
+        try {
+            val lines = file.readLines()
+            val linesToProcess = if (lines.size > limit) lines.takeLast(limit) else lines
+
+            linesToProcess.forEach { line ->
+                parseLogLine(line, channelName)?.let { messages.add(it) }
+            }
+        } catch (e: Exception) {
+            Logger.e("TextLogService", "Failed to read log file: ${file.name}", e)
+        }
     }
 }

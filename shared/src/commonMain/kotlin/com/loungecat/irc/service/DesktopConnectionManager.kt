@@ -955,7 +955,7 @@ class DesktopConnectionManager {
                                     val uniqueMessages =
                                             allMessages
                                                     .distinctBy {
-                                                        "${it.timestamp}-${it.sender}-${it.content}"
+                                                        "${it.timestamp / 1000}-${it.sender}-${it.content}"
                                                     }
                                                     .sortedBy { it.timestamp }
 

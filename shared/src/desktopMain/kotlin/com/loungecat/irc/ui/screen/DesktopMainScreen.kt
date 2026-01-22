@@ -102,7 +102,7 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
     LaunchedEffect(Unit) {
         val service = com.loungecat.irc.service.UpdateCheckService()
         // Check every 6 hours (initial check + periodic)
-        val checkIntervalMs = 6 * 60 * 60 * 1000L // 6 hours in milliseconds
+        val checkIntervalMs = 30 * 60 * 1000L // 30 minutes in milliseconds
         while (true) {
             val result = service.checkForUpdates()
             if (result != null &&
