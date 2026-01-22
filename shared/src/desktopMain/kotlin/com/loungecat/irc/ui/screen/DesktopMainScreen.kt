@@ -514,6 +514,9 @@ fun DesktopMainScreen(connectionManager: DesktopConnectionManager) {
                     ChannelPane(
                             serverId = currentSrv,
                             channelName = currentCh,
+                            isActive = true, // Single view is always active
+                            markAsRead = true,
+                            onPaneActive = {}, // No-op in single view
                             connectionManager = connectionManager,
                             userPreferences = userPreferences,
                             onSendMessage = { msg ->

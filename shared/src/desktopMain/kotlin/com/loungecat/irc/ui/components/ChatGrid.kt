@@ -138,6 +138,8 @@ fun ChatGrid(
                                 serverId = serverId,
                                 channelName = channelName,
                                 isActive = isActive,
+                                markAsRead = true, // Always mark read in split view as requested
+                                onPaneActive = { splitViewState.setActivePane(index) },
                                 connectionManager = connectionManager,
                                 userPreferences = userPreferences,
                                 onSendMessage = { message ->

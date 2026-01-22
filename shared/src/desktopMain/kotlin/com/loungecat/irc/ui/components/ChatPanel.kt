@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -72,6 +73,8 @@ fun ChatPanel(
         serverId: Long,
         channelName: String,
         isActive: Boolean = false,
+        markAsRead: Boolean = isActive, // Default to isActive for backward compatibility if needed
+        onPaneActive: () -> Unit = {},
         connectionManager: DesktopConnectionManager,
         userPreferences: UserPreferences,
         onSendMessage: (String) -> Unit
@@ -288,8 +291,8 @@ fun ChatPanel(
             var hasInitialScrolled by remember(channelName) { mutableStateOf(false) }
 
             // Mark as read when active
-            LaunchedEffect(isActive, channelMessages.size) {
-                if (isActive) {
+            LaunchedEffect(markAsRead, channelMessages.size) {
+                if (markAsRead) {
                     connectionManager.markAsRead(serverId, channelName)
                 }
             }
@@ -355,6 +358,7 @@ fun ChatPanel(
                                 Modifier.weight(1f)
                                         .padding(8.dp)
                                         .onPointerEvent(PointerEventType.Press) { event ->
+                                            onPaneActive() // Activate pane on click in list
                                             // Start selection on click
                                             val position = event.changes.firstOrNull()?.position
                                             if (position != null) {
@@ -468,6 +472,11 @@ fun ChatPanel(
                                     Modifier.fillMaxWidth()
                                             .background(colors.background, RoundedCornerShape(8.dp))
                                             .focusRequester(focusRequester)
+                                            .onFocusChanged {
+                                                if (it.isFocused) {
+                                                    onPaneActive()
+                                                }
+                                            }
                                             .then(
                                                     if (isActive) {
                                                         Modifier.border(

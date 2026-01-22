@@ -13,7 +13,7 @@ import org.jsoup.nodes.Document
 class LinkPreviewService {
 
     companion object {
-        private const val TIMEOUT_MS = 5000
+        private const val TIMEOUT_MS = 10000
         private const val USER_AGENT = "Mozilla/5.0 (compatible; LoungeCat IRC Client)"
         private const val MAX_DESCRIPTION_LENGTH = 200
     }
@@ -61,6 +61,18 @@ class LinkPreviewService {
                             siteName = siteName,
                             favicon = favicon
                     )
+                } catch (e: java.net.SocketTimeoutException) {
+                    Logger.w(
+                            "LinkPreviewService",
+                            "Timeout fetching preview for $url: ${e.message}"
+                    )
+                    UrlPreview(url = url, error = "Timeout fetching preview")
+                } catch (e: java.io.IOException) {
+                    Logger.w(
+                            "LinkPreviewService",
+                            "IO Error fetching preview for $url: ${e.message}"
+                    )
+                    UrlPreview(url = url, error = "Could not fetch preview")
                 } catch (e: Exception) {
                     Logger.error("LinkPreviewService", "Error fetching preview for $url", e)
                     UrlPreview(url = url, error = e.message)

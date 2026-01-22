@@ -29,7 +29,9 @@ import com.loungecat.irc.ui.theme.AppColors
 fun ChannelPane(
         serverId: Long,
         channelName: String,
-        isActive: Boolean = false,
+        isActive: Boolean = false, // This flag determines if the pane is focused
+        markAsRead: Boolean = isActive, // Determines if messages should be marked as read
+        onPaneActive: () -> Unit = {},
         connectionManager: DesktopConnectionManager,
         userPreferences: UserPreferences,
         onSendMessage: (String) -> Unit,
@@ -166,6 +168,8 @@ fun ChannelPane(
                                         serverId = serverId,
                                         channelName = channelName,
                                         isActive = isActive,
+                                        markAsRead = markAsRead,
+                                        onPaneActive = onPaneActive,
                                         connectionManager = connectionManager,
                                         userPreferences = userPreferences,
                                         onSendMessage = onSendMessage

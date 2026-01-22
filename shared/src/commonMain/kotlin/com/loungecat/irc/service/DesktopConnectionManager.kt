@@ -81,16 +81,8 @@ class DesktopConnectionManager {
 
     // Message cache callback (set by platform-specific code)
     // Message cache callback (set by platform-specific code)
-    var messageCacheLoader: ((Long, String) -> List<IncomingMessage>)? = null
-    var messageCacheSaver: ((Long, String, List<IncomingMessage>, String?) -> Unit)? = null
-    var messageCachePaginatedLoader: ((Long, String, Int, Int) -> List<IncomingMessage>)? = null
-    var messageCacheCountLoader: ((Long, String) -> Int)? = null
-
-    // Topic Loading Callback
-    var topicLoader: ((Long, String) -> String?)? = null
-
-    // Text Logger Callback
-    var textLogger: ((Long, String, String, IncomingMessage) -> Unit)? = null
+    // Message cache callback (set by platform-specific code)
+    // declarations moved to lines 145+
 
     // Track loading state for scrollback
     private val _isLoadingOlderMessages = MutableStateFlow(false)
@@ -140,6 +132,15 @@ class DesktopConnectionManager {
     fun setColoredNicknames(enabled: Boolean) {
         updatePreference { it.copy(coloredNicknames = enabled) }
     }
+
+    // Callbacks for MessageCache interaction
+    var messageCacheLoader: ((Long, String) -> List<IncomingMessage>)? = null
+    var messageCacheSaver: ((Long, String, List<IncomingMessage>, String?) -> Unit)? = null
+    var messageCachePaginatedLoader: ((Long, String, Int, Int) -> List<IncomingMessage>)? = null
+    var messageCacheCountLoader: ((Long, String) -> Int)? = null
+    var topicLoader: ((Long, String) -> String?)? = null
+    var textLogger: ((Long, String, String, IncomingMessage) -> Unit)? = null
+    var textLogLoader: ((Long, String, String, Int) -> List<IncomingMessage>)? = null
 
     fun setSplitViewEnabled(enabled: Boolean) {
         updatePreference { it.copy(splitViewEnabled = enabled) }
@@ -926,18 +927,55 @@ class DesktopConnectionManager {
                         val cachedMessages =
                                 messageCacheLoader?.invoke(serverId, channelName) ?: emptyList()
 
-                        // We might want to respect the limit here immediately for display
-                        val displayedMessages =
-                                if (cachedMessages.size > limit) {
-                                    cachedMessages.takeLast(limit)
+                        // Fallback/Augment from text logs if cache is insufficient
+                        val messagesToUse =
+                                if (cachedMessages.size < limit) {
+                                    val logMessages =
+                                            textLogLoader?.invoke(
+                                                    serverId,
+                                                    connection.config.serverName,
+                                                    channelName,
+                                                    limit
+                                            )
+                                                    ?: emptyList()
+
+                                    if (logMessages.isNotEmpty()) {
+                                        Logger.d(
+                                                "DesktopConnectionManager",
+                                                "Loaded ${logMessages.size} messages from TEXT LOGS for $channelName"
+                                        )
+                                    }
+
+                                    // Merge and deduplicate
+                                    // We prioritize cached messages as they might have more
+                                    // metadata
+                                    // Deduplication strategy: strict timestamp + content + sender
+                                    // match
+                                    val allMessages = cachedMessages + logMessages
+                                    val uniqueMessages =
+                                            allMessages
+                                                    .distinctBy {
+                                                        "${it.timestamp}-${it.sender}-${it.content}"
+                                                    }
+                                                    .sortedBy { it.timestamp }
+
+                                    uniqueMessages
                                 } else {
                                     cachedMessages
+                                }
+
+                        // We might want to respect the limit here immediately for display
+                        val displayedMessages =
+                                if (messagesToUse.size > limit) {
+                                    messagesToUse.takeLast(limit)
+                                } else {
+                                    messagesToUse
                                 }
 
                         if (displayedMessages.isNotEmpty()) {
                             Logger.d(
                                     "DesktopConnectionManager",
-                                    "Loaded ${displayedMessages.size} cached messages for $channelName"
+                                    "Loaded ${displayedMessages.size} messages (cache/logs) for $channelName"
                             )
                             // Process URLs for previews in cached messages
                             displayedMessages.forEach { msg ->
@@ -1342,7 +1380,7 @@ class DesktopConnectionManager {
                     updatedMessages.getOrDefault(message.target, emptyList()).toMutableList()
             targetMessages.add(message)
 
-            if (targetMessages.size > 500) {
+            if (targetMessages.size > 2000) {
                 targetMessages.removeAt(0)
             }
 

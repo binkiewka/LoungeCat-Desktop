@@ -48,57 +48,107 @@ object PlatformUtils {
             if (!os.contains("win")) return
 
             val newDir = File(getAppDataDirectory())
-            val oldDir = File(getLegacyAppDataDirectory())
 
-            // Only migrate if new dir doesn't exist (or is empty) and old dir exists
-            if (!newDir.exists() && oldDir.exists()) {
-                Logger.i("PlatformUtils", "Detecting Windows migration needed...")
-                Logger.i(
-                        "PlatformUtils",
-                        "Migrating from ${oldDir.absolutePath} to ${newDir.absolutePath}"
-                )
+            // Check for migration marker to avoid re-running or overwriting verified data
+            val migrationMarker = File(newDir, ".migration_complete_v1")
+            if (migrationMarker.exists()) {
+                Logger.d("PlatformUtils", "Migration already completed (marker exists)")
+                return
+            }
 
-                try {
-                    // Create new directory
-                    if (newDir.mkdirs()) {
-                        // Copy preferences
-                        val oldPrefs = File(oldDir, "preferences.json")
-                        if (oldPrefs.exists()) {
-                            oldPrefs.copyTo(File(newDir, "preferences.json"))
-                            Logger.i("PlatformUtils", "Migrated preferences.json")
-                        }
+            // Identify source: Priority 1: ~/.loungecat, Priority 2: AppData/Local/LoungeCat
+            val homeDir = File(System.getProperty("user.home"), ".loungecat")
+            val legacyLocalDir = File(getLegacyAppDataDirectory())
 
-                        // Copy database
-                        val oldDb = File(oldDir, "loungecat.db")
-                        if (oldDb.exists()) {
-                            oldDb.copyTo(File(newDir, "loungecat.db"))
-                            Logger.i("PlatformUtils", "Migrated loungecat.db")
-                        }
-
-                        // Copy logs folder if it exists
-                        val oldLogs = File(oldDir, "logs")
-                        if (oldLogs.exists() && oldLogs.isDirectory) {
-                            oldLogs.copyRecursively(File(newDir, "logs"))
-                            Logger.i("PlatformUtils", "Migrated logs directory")
-                        }
-
-                        // Copy custom themes folder if it exists
-                        val oldThemes = File(oldDir, "themes")
-                        if (oldThemes.exists() && oldThemes.isDirectory) {
-                            oldThemes.copyRecursively(File(newDir, "themes"))
-                            Logger.i("PlatformUtils", "Migrated themes directory")
-                        }
-
-                        Logger.i("PlatformUtils", "Migration completed successfully")
-                    } else {
-                        Logger.e(
-                                "PlatformUtils",
-                                "Failed to create new config directory: ${newDir.absolutePath}"
-                        )
+            val sourceDir =
+                    when {
+                        homeDir.exists() && homeDir.isDirectory -> homeDir
+                        legacyLocalDir.exists() && legacyLocalDir.isDirectory -> legacyLocalDir
+                        else -> null
                     }
+
+            if (sourceDir == null) {
+                Logger.d("PlatformUtils", "No legacy data found to migrate")
+                // Mark as migrated so we don't keep checking
+                if (!newDir.exists()) newDir.mkdirs()
+                migrationMarker.createNewFile()
+                return
+            }
+
+            Logger.i("PlatformUtils", "Detecting Windows migration needed...")
+            Logger.i("PlatformUtils", "Source: ${sourceDir.absolutePath}")
+            Logger.i("PlatformUtils", "Target: ${newDir.absolutePath}")
+
+            // Safety check: if target exists and has data (e.g. user generated new data in broken
+            // version),
+            // we have a conflict. For now, if the new DB is tiny (empty) or doesn't exist, we
+            // overwrite.
+            // If it seems used, we might back it up.
+
+            if (!newDir.exists()) {
+                newDir.mkdirs()
+            }
+
+            val targetDb = File(newDir, "loungecat.db")
+            val targetPrefs = File(newDir, "preferences.json")
+
+            // Heuristic: If target DB exists but is very small (< 20KB), it's likely an empty
+            // default DB
+            // created by the broken installer. We can safely overwrite it with the legacy user
+            // data.
+            val isTargetFresh = !targetDb.exists() || targetDb.length() < 20 * 1024 // 20KB
+
+            if (isTargetFresh) {
+                try {
+                    // Copy specific files/folders to avoid clutter
+
+                    // 1. Preferences
+                    val srcPrefs = File(sourceDir, "preferences.json")
+                    if (srcPrefs.exists()) {
+                        srcPrefs.copyTo(targetPrefs, overwrite = true)
+                        Logger.i("PlatformUtils", "Migrated preferences.json")
+                    }
+
+                    // 2. Database
+                    val srcDb = File(sourceDir, "loungecat.db")
+                    if (srcDb.exists()) {
+                        srcDb.copyTo(targetDb, overwrite = true)
+                        Logger.i("PlatformUtils", "Migrated loungecat.db")
+                    }
+
+                    // 3. Logs
+                    val srcLogs = File(sourceDir, "logs")
+                    if (srcLogs.exists()) {
+                        val targetLogs = File(newDir, "logs")
+                        srcLogs.copyRecursively(targetLogs, overwrite = true)
+                        Logger.i("PlatformUtils", "Migrated logs")
+                    }
+
+                    // 4. Themes
+                    val srcThemes = File(sourceDir, "themes")
+                    if (srcThemes.exists()) {
+                        val targetThemes = File(newDir, "themes")
+                        srcThemes.copyRecursively(targetThemes, overwrite = true)
+                        Logger.i("PlatformUtils", "Migrated themes")
+                    }
+
+                    // 5. Message Cache (Attachments/History) if it was file-based in that dir
+                    // (Assuming standard structure provided in Main.kt previously)
+
+                    // Mark completion
+                    migrationMarker.createNewFile()
+                    Logger.i("PlatformUtils", "Migration completed successfully")
                 } catch (e: Exception) {
-                    Logger.e("PlatformUtils", "Error during migration: ${e.message}", e)
+                    Logger.e("PlatformUtils", "Error during migration copy", e)
                 }
+            } else {
+                Logger.w(
+                        "PlatformUtils",
+                        "Target directory has significant data, skipping migration to avoid data loss."
+                )
+                // Create marker to stop annoying the log, assuming user accepts current state?
+                // Or leave it to try again if they delete the bad data?
+                // Leaving it alone is safer.
             }
         } catch (e: Exception) {
             Logger.e("PlatformUtils", "Migration check failed", e)

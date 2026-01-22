@@ -71,7 +71,7 @@ fun main() {
         PlatformUtils.performWindowsMigration()
 
         // Initialize services
-        val appDataDir = File(System.getProperty("user.home"), ".loungecat")
+        val appDataDir = File(PlatformUtils.getAppDataDirectory())
         if (!appDataDir.exists()) {
             appDataDir.mkdirs()
         }
@@ -123,6 +123,9 @@ fun main() {
                 textLogger = { serverId, serverName, channelName, message ->
                     TextLogService.logFromMessage(serverId, serverName, channelName, message)
                 }
+                textLogLoader = { serverId, serverName, channelName, limit ->
+                    TextLogService.readLastMessages(serverId, serverName, channelName, limit)
+                }
 
                 // Set up preferences updater callback
                 setPreferencesUpdater { prefs -> PreferencesManager.updatePreferences { prefs } }
@@ -156,6 +159,7 @@ fun main() {
 
         // Track if dorkbox successfully loaded
         var isDorkboxReady by remember { mutableStateOf(false) }
+        var isDorkboxFailed by remember { mutableStateOf(false) }
 
         // Linux-specific tray logic using dorkbox/SystemTray
         val scope = rememberCoroutineScope()
@@ -181,46 +185,29 @@ fun main() {
                                 // Advanced configurations
                                 dorkbox.systemTray.SystemTray.DEBUG = true
                                 dorkbox.systemTray.SystemTray.FORCE_GTK2 = false
+                                // Removed FORCE_TRAY_TYPE = AppIndicator to allow auto-detection
+                                // and prevent dock icon issues
 
-                                // Force AppIndicator to try and skip the 3-minute delay of
-                                // GtkStatusIcon
-                                try {
-                                    dorkbox.systemTray.SystemTray.FORCE_TRAY_TYPE =
-                                            dorkbox.systemTray.SystemTray.TrayType.valueOf(
-                                                    "AppIndicator"
-                                            )
-
-                                    // Log available types for debugging (optional but helpful)
-                                    val trayTypes = dorkbox.systemTray.SystemTray.TrayType.values()
-                                    Logger.d(
-                                            "Main",
-                                            "Available TrayTypes: ${trayTypes.joinToString { it.name }}"
-                                    )
-
-                                    // CRITICAL FIX: Force AppIndicator
-                                    Logger.d(
-                                            "Main",
-                                            "Forcing TrayType to: AppIndicator (via valueOf)"
-                                    )
-                                } catch (e: Exception) {
-                                    Logger.e("Main", "Could not force AppIndicator: ${e.message}")
-                                }
-
-                                // Initialize SystemTray on Background Thread (IO)
-                                // We rely on Dorkbox internal threading to handle GTK loops
+                                // Initialize SystemTray on Background Thread (IO) with Timeout
                                 try {
                                     Logger.d(
                                             "Main",
                                             "LoungeCat - Running SystemTray.get() on IO thread..."
                                     )
-                                    val tray = dorkbox.systemTray.SystemTray.get()
-                                    Logger.d("Main", "LoungeCat - SystemTray.get() returned: $tray")
+
+                                    // wrapper to allow timeout since get() can block
+                                    val tray =
+                                            kotlinx.coroutines.withTimeoutOrNull(10000L) {
+                                                dorkbox.systemTray.SystemTray.get()
+                                            }
 
                                     if (tray != null) {
                                         systemTray = tray
-                                        isDorkboxReady =
-                                                true // Signal that we have a native tray (disables
-                                        // fallback)
+                                        isDorkboxReady = true
+                                        Logger.d(
+                                                "Main",
+                                                "LoungeCat - SystemTray.get() returned: $tray"
+                                        )
 
                                         val classLoader = Thread.currentThread().contextClassLoader
                                         val iconStream =
@@ -248,28 +235,23 @@ fun main() {
                                             try {
                                                 var image = ImageIO.read(iconStream)
 
-                                                // Resize image to standard tray size (24x24) to
-                                                // ensure
-                                                // compatibility
-                                                // and fix potential "black square" issues if the
-                                                // icon
-                                                // is too large/wrong format
+                                                // Resize image to 36x36 (requested +10% from 32)
                                                 val resized =
                                                         java.awt.image.BufferedImage(
-                                                                24,
-                                                                24,
+                                                                36,
+                                                                36,
                                                                 java.awt.image.BufferedImage
                                                                         .TYPE_INT_ARGB
                                                         )
                                                 val g = resized.createGraphics()
-                                                g.drawImage(image, 0, 0, 24, 24, null)
+                                                g.drawImage(image, 0, 0, 36, 36, null)
                                                 g.dispose()
 
                                                 tray.setImage(resized)
                                                 tray.setTooltip("LoungeCat")
                                                 Logger.d(
                                                         "Main",
-                                                        "LoungeCat - Dorkbox: Tray image set successfully (resized to 24x24)"
+                                                        "LoungeCat - Dorkbox: Tray image set successfully (resized to 32x32)"
                                                 )
                                             } catch (e: Exception) {
                                                 Logger.e(
@@ -310,8 +292,15 @@ fun main() {
                                     } else {
                                         Logger.e(
                                                 "Main",
-                                                "LoungeCat - dorkbox SystemTray.get() returned null"
+                                                "LoungeCat - dorkbox SystemTray.get() timed out or returned null"
                                         )
+                                        isDorkboxFailed = true
+                                        isDorkboxReady = false
+                                        // Ensure we shut down any half-initialized state if
+                                        // possible
+                                        try {
+                                            systemTray?.shutdown()
+                                        } catch (e: Exception) {}
                                     }
                                 } catch (e: Throwable) {
                                     Logger.e(
@@ -319,6 +308,8 @@ fun main() {
                                             "LoungeCat - Error in SystemTray initialization: ${e.message}",
                                             e
                                     )
+                                    isDorkboxFailed = true
+                                    isDorkboxReady = false
                                 }
                             } catch (e: Exception) {
                                 Logger.e(
@@ -326,6 +317,8 @@ fun main() {
                                         "LoungeCat - Error with Dorkbox setup: ${e.message}",
                                         e
                                 )
+                                isDorkboxFailed = true
+                                isDorkboxReady = false
                             }
                         }
                     }
@@ -363,14 +356,16 @@ fun main() {
         }
 
         // Standard Tray Fallback
-        // Show if NOT Linux. On Linux, user prefers wait over black box AWT.
+        // Show if NOT Linux OR if Linux and Dorkbox failed/timed out.
         // We use manual AWT SystemTray here to ensure we can resize the image properly
-        // and avoid the "black square" issue common with high-res icons on Linux AWT
-        if (System.getenv("HEADLESS") != "true" && !isLinux && SystemTray.isSupported()) {
-            DisposableEffect(Unit) {
+        if (System.getenv("HEADLESS") != "true" &&
+                        (!isLinux || isDorkboxFailed) &&
+                        SystemTray.isSupported()
+        ) {
+            DisposableEffect(isDorkboxFailed) {
                 Logger.d(
                         "Main",
-                        "LoungeCat - FALLBACK TRAY ACTIVE (Manual AWT Tray) - isLinux: $isLinux, isDorkboxReady: $isDorkboxReady"
+                        "LoungeCat - FALLBACK TRAY ACTIVE (Manual AWT Tray) - isLinux: $isLinux, isDorkboxReady: $isDorkboxReady, isDorkboxFailed: $isDorkboxFailed"
                 )
                 val tray = SystemTray.getSystemTray()
                 var trayIcon: java.awt.TrayIcon? = null
@@ -399,15 +394,15 @@ fun main() {
 
                     if (iconStream != null) {
                         val originalImage = ImageIO.read(iconStream)
-                        // Resize to 24x24 for Linux Tray (standard size)
+                        // Resize to 36x36 (requested another ~10% bigger than 32)
                         val resizedImage =
                                 java.awt.image.BufferedImage(
-                                        24,
-                                        24,
+                                        36,
+                                        36,
                                         java.awt.image.BufferedImage.TYPE_INT_ARGB
                                 )
                         val g = resizedImage.createGraphics()
-                        g.drawImage(originalImage, 0, 0, 24, 24, null)
+                        g.drawImage(originalImage, 0, 0, 36, 36, null)
                         g.dispose()
 
                         val popup = java.awt.PopupMenu()
@@ -433,6 +428,23 @@ fun main() {
                         // to be safe.
                         // However, let's keep it false for manual control.
                         trayIcon.isImageAutoSize = false
+
+                        // Left Click (Primary Action) -> Open App using MouseListener for Single
+                        // Click support
+                        trayIcon.addMouseListener(
+                                object : java.awt.event.MouseAdapter() {
+                                    override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                                        if (e.button == java.awt.event.MouseEvent.BUTTON1
+                                        ) { // Left Click
+                                            scope.launch(Dispatchers.Main) {
+                                                isVisible = true
+                                                // Optional: Bring to front logic could be added
+                                                // here if needed
+                                            }
+                                        }
+                                    }
+                                }
+                        )
 
                         tray.add(trayIcon)
                         notificationService.setManualTray(tray, trayIcon)
