@@ -14,6 +14,24 @@ actual fun openUrl(url: String) {
     }
 }
 
+actual fun getSystemInfo(
+        hideOs: Boolean,
+        hideCpu: Boolean,
+        hideMemory: Boolean,
+        hideStorage: Boolean,
+        hideVga: Boolean,
+        hideUptime: Boolean
+): String {
+    return SystemInfoCollector.getSystemInfo(
+            hideOs,
+            hideCpu,
+            hideMemory,
+            hideStorage,
+            hideVga,
+            hideUptime
+    )
+}
+
 object PlatformUtils {
 
     fun getAppDataDirectory(): String {

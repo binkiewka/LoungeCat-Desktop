@@ -29,7 +29,6 @@ object DatabaseService : DatabaseServiceInterface {
             Logger.d("DatabaseService", "Database initialized at $dbPath")
         } catch (e: Exception) {
             Logger.e("DatabaseService", "CRITICAL: Failed to initialize database", e)
-            e.printStackTrace()
         }
     }
 

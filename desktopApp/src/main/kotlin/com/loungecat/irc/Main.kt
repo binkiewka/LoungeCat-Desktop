@@ -63,7 +63,7 @@ fun main() {
             )
             exitProcess(1)
         }
-        e.printStackTrace()
+        Logger.e("Main", "Failed to acquire lock file", e)
     }
 
     application {
@@ -300,7 +300,9 @@ fun main() {
                                         // possible
                                         try {
                                             systemTray?.shutdown()
-                                        } catch (e: Exception) {}
+                                        } catch (e: Exception) {
+                                            Logger.w("Main", "Failed to shutdown half-initialized tray")
+                                        }
                                     }
                                 } catch (e: Throwable) {
                                     Logger.e(
@@ -455,7 +457,6 @@ fun main() {
                     }
                 } catch (e: Exception) {
                     Logger.e("Main", "LoungeCat - Fallback tray setup failed: ${e.message}", e)
-                    e.printStackTrace()
                 }
 
                 onDispose {
@@ -636,8 +637,7 @@ class DesktopNotificationService(private val trayState: TrayState) {
                     )
             Runtime.getRuntime().exec(command)
         } catch (e: Exception) {
-            e.printStackTrace()
-            // Fallback
+            Logger.e("Main", "Failed to send native notification", e)
             sendNotification(title, message)
         }
     }

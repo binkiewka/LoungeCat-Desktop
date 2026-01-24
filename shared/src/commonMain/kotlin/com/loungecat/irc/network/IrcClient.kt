@@ -126,7 +126,9 @@ class IrcClient(
                                     break
                                 }
                             }
-                        } catch (e: Exception) {}
+                        } catch (e: Exception) {
+                            Logger.w("IrcClient", "Failed to inspect fields in ${currentClass.name} during proxy injection")
+                        }
                         if (bootstrapField != null) break
                         currentClass = currentClass.superclass
                     }

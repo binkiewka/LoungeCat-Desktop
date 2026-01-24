@@ -73,6 +73,8 @@ sealed class IrcCommand {
     data class KickBan(val nickname: String, val reason: String?) : IrcCommand()
     data class Ctcp(val target: String, val message: String) : IrcCommand()
 
+    data class SysInfo(val args: kotlin.collections.List<String>) : IrcCommand()
+
     data object NotACommand : IrcCommand()
     data class Unknown(val command: String, val args: String) : IrcCommand()
 }
@@ -269,6 +271,11 @@ object IrcCommandParser {
                 if (ctcpParts.size < 2) return IrcCommand.Unknown(command, args)
                 IrcCommand.Ctcp(ctcpParts[0], ctcpParts[1])
             }
+            "sysinfo" -> {
+                val sysParts =
+                        if (args.isNotBlank()) args.trim().split("\\s+".toRegex()) else emptyList()
+                IrcCommand.SysInfo(sysParts)
+            }
             "clear", "cls" -> IrcCommand.Clear
             "help", "commands", "?" -> IrcCommand.Help
             else -> IrcCommand.Unknown(command, args)
@@ -286,7 +293,7 @@ object IrcCommandParser {
         |SERVICES: /identify /ns /cs /ms
         |SERVER: /quit /raw /ping /time /version /motd /info /links /map /lusers /admin
         |IRCOP: /oper /kill /kline /gline /zline /rehash /restart /die /wallops /saje
-        |CLIENT: /clear /help
+        |CLIENT: /clear /sysinfo /help
         |
         |TIP: Use // to send a message starting with /
     """.trimMargin()

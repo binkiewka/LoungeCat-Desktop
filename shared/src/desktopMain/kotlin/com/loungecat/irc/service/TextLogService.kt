@@ -20,6 +20,109 @@ object TextLogService {
         logDir = File(appDataDir, "logs")
         logDir?.mkdirs()
         Logger.d("TextLogService", "Initialized at ${logDir?.absolutePath}")
+
+        // Fix legacy directory names (merge split folders)
+        fixLegacyDirectoryNames()
+    }
+
+    private fun fixLegacyDirectoryNames() {
+        try {
+            val root = logDir ?: return
+            val dirs = root.listFiles { file -> file.isDirectory } ?: return
+
+            // Group by "base" name (without trailing underscore)
+            // We are looking for pairs: "Name" and "Name_"
+            // "Name_" is likely the OLD folder (creation date older?) or the one we want to
+            // keep/merge into "Name"
+            // Wait, looking at the user image:
+            // "Libera_Chat" (21.01 11:40) - New
+            // "Libera_Chat_" (20.01 23:20) - Old
+            // "PT" (21.01)
+
+            // So "Name_" is the OLD one. "Name" is the NEW one (created after regression).
+            // We want to merge "Name" (new partial logs) INTO "Name_" (full history),
+            // and then rename "Name_" -> "Name" (standard).
+
+            val validDirs = dirs.map { it.name }.toSet()
+
+            dirs.forEach { dir ->
+                val name = dir.name
+                if (name.endsWith("_")) {
+                    val baseName = name.removeSuffix("_")
+                    val newDir = File(root, baseName)
+
+                    if (newDir.exists() && newDir.isDirectory) {
+                        Logger.d(
+                                "TextLogService",
+                                "Found split log directories: $name (Old) and $baseName (New). Merging..."
+                        )
+                        mergeDirectories(source = newDir, destination = dir)
+
+                        // After merge, rename "New" to backup/delete and "Old" to "New"
+                        val backupDir = File(root, "${baseName}_bak")
+                        if (newDir.renameTo(backupDir)) {
+                            if (dir.renameTo(newDir)) {
+                                Logger.d(
+                                        "TextLogService",
+                                        "Successfully restored log history for $baseName"
+                                )
+                                // Optional: Delete backup if empty or safe? specific request was
+                                // just to fix.
+                                // limit risk by keeping _bak for now or user can delete.
+                            } else {
+                                Logger.e("TextLogService", "Failed to rename $name to $baseName")
+                                // rollback?
+                                backupDir.renameTo(newDir)
+                            }
+                        } else {
+                            Logger.e("TextLogService", "Failed to move new logs to backup")
+                        }
+                    } else {
+                        // Case: Only "Name_" exists, and we want it to be "Name"
+                        // This restores the standard naming if the new folder hasn't been created
+                        // yet
+                        val targetDir = File(root, baseName)
+                        if (!targetDir.exists()) {
+                            if (dir.renameTo(targetDir)) {
+                                Logger.d(
+                                        "TextLogService",
+                                        "Renamed legacy folder $name to $baseName"
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Logger.e("TextLogService", "Error fixing legacy directories", e)
+        }
+    }
+
+    private fun mergeDirectories(source: File, destination: File) {
+        val srcFiles = source.listFiles() ?: return
+
+        srcFiles.forEach { srcFile ->
+            val destFile = File(destination, srcFile.name)
+            if (destFile.exists()) {
+                // Append content
+                try {
+                    destFile.appendBytes(srcFile.readBytes())
+                    Logger.d("TextLogService", "Merged content for ${srcFile.name}")
+                    srcFile.delete()
+                } catch (e: Exception) {
+                    Logger.e("TextLogService", "Failed to merge ${srcFile.name}", e)
+                }
+            } else {
+                // Move file
+                if (srcFile.renameTo(destFile)) {
+                    Logger.d("TextLogService", "Moved ${srcFile.name}")
+                } else {
+                    Logger.e("TextLogService", "Failed to move ${srcFile.name}")
+                }
+            }
+        }
+        // Try to delete empty source dir
+        source.delete()
     }
 
     fun logFromMessage(

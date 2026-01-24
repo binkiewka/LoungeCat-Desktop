@@ -20,7 +20,6 @@ object MessageCache {
     private var saveJob: Job? = null
     private const val MAX_MESSAGES_PER_CHANNEL = 2000
     private const val SAVE_DEBOUNCE_MS = 2000L
-    private const val DEFAULT_PAGE_SIZE = 100
 
     fun initialize(appDataDir: File) {
         cacheDir = File(appDataDir, "cache/messages")

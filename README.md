@@ -96,6 +96,10 @@
 ### ⚡ Power User Tools
 
 - **Slash Commands**: Full support for standard commands like `/join`, `/part`, `/nick`, `/me`, etc.
+  - **/sysinfo**: Display detailed system information (OS, CPU, Memory, GPU, etc.).
+    - `-o` or `--public`: Send output to the channel.
+    - `-e` or `--echo`: Echo locally (default).
+    - `[subcommands]`: Filter info, e.g., `/sysinfo cpu memory`.
 - **Raw Commands**: Execute raw IRC protocol commands for advanced control.
 - **On-Connect Commands**: Define custom raw commands to execute automatically after connection.
 - **Server Configuration Import/Export**: Backup and share your server lists easily.

@@ -1103,49 +1103,6 @@ private fun ServerItem(
     }
 }
 
-@Composable
-private fun UserItem(user: ChannelUser, onClick: () -> Unit) {
-    val colors = AppColors.current
-
-    Row(
-            modifier =
-                    Modifier.fillMaxWidth()
-                            .clickable(onClick = onClick)
-                            .padding(horizontal = 12.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-    ) {
-        val prefix =
-                when {
-                    user.modes.contains(UserMode.OWNER) -> "~"
-                    user.modes.contains(UserMode.ADMIN) -> "&"
-                    user.modes.contains(UserMode.OP) -> "@"
-                    user.modes.contains(UserMode.HALFOP) -> "%"
-                    user.modes.contains(UserMode.VOICE) -> "+"
-                    else -> " "
-                }
-
-        val prefixColor =
-                when {
-                    user.isOp -> colors.red
-                    user.isVoiced -> colors.green
-                    else -> colors.comment
-                }
-
-        Text(
-                text = prefix,
-                color = prefixColor,
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.width(12.dp)
-        )
-        Text(
-                text = user.nickname,
-                color = colors.foreground,
-                style = MaterialTheme.typography.bodySmall
-        )
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddServerDialog(onDismiss: () -> Unit, onConnect: (ServerConfig) -> Unit) {

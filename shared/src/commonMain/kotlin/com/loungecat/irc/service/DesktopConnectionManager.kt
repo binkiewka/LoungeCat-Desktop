@@ -11,6 +11,7 @@ import com.loungecat.irc.util.IrcCommandParser
 import com.loungecat.irc.util.Logger
 import com.loungecat.irc.util.UrlExtractor
 import com.loungecat.irc.util.UserActivityTracker
+import com.loungecat.irc.util.getSystemInfo
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -19,9 +20,12 @@ import kotlinx.coroutines.sync.withLock
 class DesktopConnectionManager {
 
     private val connectionMutex = Mutex()
-    // ... rest
 
-    private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        Logger.e("DesktopConnectionManager", "Uncaught exception in coroutine", throwable)
+    }
+
+    private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
 
     private val _connections = MutableStateFlow<Map<Long, ServerConnection>>(emptyMap())
     val connectionStates: StateFlow<Map<Long, ServerConnection>> = _connections.asStateFlow()
@@ -227,7 +231,6 @@ class DesktopConnectionManager {
         ignoredUsers = ignoredUsers - lowerNick
         updatePreference { it.copy(ignoredUsers = ignoredUsers) }
     }
-    private var currentNickname: String = ""
 
     private val urlPreviewService = LinkPreviewService()
 
@@ -556,8 +559,6 @@ class DesktopConnectionManager {
 
                     // Cancel reconnect jobs
                     reconnectJobs[serverId]?.cancel()
-                    // Cancel reconnect jobs
-                    reconnectJobs[serverId]?.cancel()
                     reconnectJobs.remove(serverId)
 
                     // Cancel stability jobs
@@ -737,6 +738,42 @@ class DesktopConnectionManager {
             }
             is IrcCommand.Help -> {
                 addSystemMessage(serverId, target, IrcCommandParser.getHelpText())
+            }
+            is IrcCommand.SysInfo -> {
+                val args = command.args
+                val isPublic = args.contains("-o") || args.contains("--public")
+                val flags = setOf("-o", "--public", "-e", "--echo")
+                val subcommands = args.filter { !flags.contains(it) }.map { it.lowercase() }
+
+                val showAll =
+                        subcommands.isEmpty() ||
+                                subcommands.contains("full") ||
+                                subcommands.contains("all")
+
+                val sysInfo =
+                        getSystemInfo(
+                                hideOs = !showAll && !subcommands.contains("os"),
+                                hideCpu = !showAll && !subcommands.contains("cpu"),
+                                hideMemory =
+                                        !showAll &&
+                                                !subcommands.contains("memory") &&
+                                                !subcommands.contains("mem"),
+                                hideStorage =
+                                        !showAll &&
+                                                !subcommands.contains("storage") &&
+                                                !subcommands.contains("disk"),
+                                hideVga =
+                                        !showAll &&
+                                                !subcommands.contains("vga") &&
+                                                !subcommands.contains("gpu"),
+                                hideUptime = !showAll && !subcommands.contains("uptime")
+                        )
+
+                if (isPublic) {
+                    sendMessageOrUsePastebin(connection, target, sysInfo)
+                } else {
+                    addSystemMessage(serverId, target, sysInfo)
+                }
             }
             is IrcCommand.Ignore -> {
                 ignoreUser(command.nickname)

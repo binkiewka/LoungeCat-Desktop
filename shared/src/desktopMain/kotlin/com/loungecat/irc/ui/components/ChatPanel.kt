@@ -809,14 +809,20 @@ fun ChatPanel(
                                                     file.name
                                             )
                                     if (uploadedUrl != null) {
-                                        val newText =
+                                        val textToSend =
                                                 if (messageInput.text.isNotEmpty()) {
                                                     messageInput.text + " " + uploadedUrl
                                                 } else {
                                                     uploadedUrl
                                                 }
-                                        messageInput =
-                                                TextFieldValue(newText, TextRange(newText.length))
+
+                                        // Auto-send the message (URL + any existing text)
+                                        if (textToSend.isNotBlank()) {
+                                            inputHistoryHelper.addMessage(channelName, textToSend)
+                                            onSendMessage(textToSend)
+                                            messageInput = TextFieldValue("")
+                                            tabCompletionHelper.reset()
+                                        }
                                     }
                                 }
                             }

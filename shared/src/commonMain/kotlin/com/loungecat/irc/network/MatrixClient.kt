@@ -5,6 +5,7 @@ import com.loungecat.irc.data.model.ChannelType
 import com.loungecat.irc.data.model.ConnectionState
 import com.loungecat.irc.data.model.IncomingMessage
 import com.loungecat.irc.data.model.ServerConfig
+import com.loungecat.irc.util.Logger
 import io.ktor.http.Url
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -32,6 +33,10 @@ class MatrixClient(
         override val serverId: Long,
         private val scope: CoroutineScope
 ) : ChatClient {
+
+    private companion object {
+        private const val TAG = "MatrixClient"
+    }
 
     private var client: MatrixClient? = null
     private var syncJob: Job? = null
@@ -126,11 +131,11 @@ class MatrixClient(
                             }
                             .launchIn(scope)
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Logger.e(TAG, "Failed to load rooms", e)
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Logger.e(TAG, "Failed to connect to Matrix", e)
             _connectionState.value =
                     ConnectionState.Error(e.message ?: "Failed to connect to Matrix")
         }
@@ -155,7 +160,7 @@ class MatrixClient(
             val roomId = RoomId(target)
             client.room.sendMessage(roomId) { text(message) }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Logger.e(TAG, "Failed to send message to $target", e)
         }
     }
 
@@ -174,7 +179,7 @@ class MatrixClient(
                 client.api.room.joinRoom(roomId).getOrThrow()
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Logger.e(TAG, "Failed to join channel $channelName", e)
         }
     }
 
@@ -184,7 +189,7 @@ class MatrixClient(
             val roomId = RoomId(channelName)
             client.api.room.leaveRoom(roomId).getOrThrow()
         } catch (e: Exception) {
-            e.printStackTrace()
+            Logger.e(TAG, "Failed to leave channel $channelName", e)
         }
     }
 

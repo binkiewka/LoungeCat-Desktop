@@ -126,20 +126,6 @@ class SplitViewState {
         }
     }
 
-    fun replaceActiveChannel(serverId: Long, channelName: String) {
-        // Prevent duplicates (unless we are replacing the current one with itself, which is fine
-        // but pointless)
-        if (_activeChannels.any { it.first == serverId && it.second == channelName }) {
-            return
-        }
-
-        if (activePaneIndex in _activeChannels.indices) {
-            _activeChannels[activePaneIndex] = Pair(serverId, channelName)
-        } else if (_activeChannels.isEmpty()) {
-            addChannel(serverId, channelName)
-        }
-    }
-
     fun setActivePane(index: Int) {
         if (index in _activeChannels.indices) {
             activePaneIndex = index

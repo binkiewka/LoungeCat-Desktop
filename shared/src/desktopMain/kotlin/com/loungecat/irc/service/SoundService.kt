@@ -1,5 +1,6 @@
 package com.loungecat.irc.service
 
+import com.loungecat.irc.util.Logger
 import java.awt.Toolkit
 import javax.sound.sampled.*
 import kotlinx.coroutines.Dispatchers
@@ -7,6 +8,8 @@ import kotlinx.coroutines.withContext
 
 /** Sound alert service for IRC events. Uses Java Sound API with system beep fallback. */
 object SoundService {
+
+    private const val TAG = "SoundService"
 
     enum class SoundType {
         MENTION,
@@ -29,9 +32,7 @@ object SoundService {
             )
 
     fun initialize(soundEnabled: Boolean = true, soundVolume: Float = 0.7f) {
-        println(
-                "[SoundService] initialize() called: soundEnabled=$soundEnabled, volume=$soundVolume"
-        )
+        Logger.d(TAG, "initialize() called: soundEnabled=$soundEnabled, volume=$soundVolume")
         enabled = soundEnabled
         volume = soundVolume.coerceIn(0f, 1f)
     }
@@ -56,28 +57,25 @@ object SoundService {
      */
     suspend fun play(type: SoundType) =
             withContext(Dispatchers.IO) {
-                println(
-                        "[SoundService] play() called for $type, enabled=$enabled, typeEnabled=${enabledSounds[type]}"
-                )
+                Logger.d(TAG, "play() called for $type, enabled=$enabled, typeEnabled=${enabledSounds[type]}")
                 if (!enabled || enabledSounds[type] != true) {
-                    println("[SoundService] Sound disabled, skipping")
+                    Logger.d(TAG, "Sound disabled, skipping")
                     return@withContext
                 }
 
                 try {
                     // Try to play a generated tone based on the event type
-                    println("[SoundService] Attempting to play tone...")
+                    Logger.d(TAG, "Attempting to play tone...")
                     playTone(type)
-                    println("[SoundService] Tone played successfully")
+                    Logger.d(TAG, "Tone played successfully")
                 } catch (e: Exception) {
-                    println("[SoundService] playTone failed: ${e.message}")
-                    e.printStackTrace()
+                    Logger.w(TAG, "playTone failed: ${e.message}")
                     // Fallback to system beep
                     try {
-                        println("[SoundService] Trying system beep fallback...")
+                        Logger.d(TAG, "Trying system beep fallback...")
                         Toolkit.getDefaultToolkit().beep()
                     } catch (e2: Exception) {
-                        println("[SoundService] System beep also failed: ${e2.message}")
+                        Logger.w(TAG, "System beep also failed: ${e2.message}")
                     }
                 }
             }
@@ -128,23 +126,23 @@ object SoundService {
         val format = AudioFormat(sampleRate, 16, 1, true, false)
         val info = DataLine.Info(SourceDataLine::class.java, format)
 
-        println("[SoundService] Checking if audio line is supported...")
+        Logger.d(TAG, "Checking if audio line is supported...")
         if (!AudioSystem.isLineSupported(info)) {
-            println("[SoundService] Audio line NOT supported, using beep")
+            Logger.d(TAG, "Audio line NOT supported, using beep")
             // Fall back to system beep if audio line not supported
             Toolkit.getDefaultToolkit().beep()
             return
         }
 
-        println("[SoundService] Opening audio line...")
+        Logger.d(TAG, "Opening audio line...")
         val line = AudioSystem.getLine(info) as SourceDataLine
         line.open(format)
-        println("[SoundService] Starting playback...")
+        Logger.d(TAG, "Starting playback...")
         line.start()
         line.write(samples, 0, samples.size)
         line.drain()
         line.close()
-        println("[SoundService] Playback complete")
+        Logger.d(TAG, "Playback complete")
     }
 
     /**
