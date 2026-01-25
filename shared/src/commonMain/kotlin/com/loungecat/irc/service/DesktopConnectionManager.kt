@@ -27,6 +27,13 @@ class DesktopConnectionManager {
 
     private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
 
+    // Memory management: Keep fewer messages in memory than on disk for UI performance
+    // Disk cache allows 2000 messages, but in-memory we keep less to prevent UI freeze
+    companion object {
+        private const val MAX_IN_MEMORY_MESSAGES = 500
+        private const val CLEANUP_INTERVAL_MS = 30 * 60 * 1000L // 30 minutes
+    }
+
     private val _connections = MutableStateFlow<Map<Long, ServerConnection>>(emptyMap())
     val connectionStates: StateFlow<Map<Long, ServerConnection>> = _connections.asStateFlow()
 
@@ -91,6 +98,78 @@ class DesktopConnectionManager {
     // Track loading state for scrollback
     private val _isLoadingOlderMessages = MutableStateFlow(false)
     val isLoadingOlderMessages: StateFlow<Boolean> = _isLoadingOlderMessages.asStateFlow()
+
+    // Periodic cleanup job to prevent memory bloat during long sessions
+    private var cleanupJob: Job? = null
+
+    init {
+        // Start periodic cleanup for memory management
+        cleanupJob =
+                managerScope.launch {
+                    while (true) {
+                        delay(CLEANUP_INTERVAL_MS)
+                        performPeriodicCleanup()
+                    }
+                }
+    }
+
+    /**
+     * Performs periodic cleanup to prevent memory bloat during long sessions. Trims in-memory
+     * messages, clears old WHOIS cache entries, and cleans URL previews.
+     */
+    private fun performPeriodicCleanup() {
+        Logger.d("DesktopConnectionManager", "Performing periodic memory cleanup")
+
+        // Trim messages in all connections to MAX_IN_MEMORY_MESSAGES
+        _connections.update { currentConnections ->
+            currentConnections.mapValues { (_, connection) ->
+                val trimmedMessages =
+                        connection.messages.mapValues { (_, messages) ->
+                            if (messages.size > MAX_IN_MEMORY_MESSAGES) {
+                                messages.takeLast(MAX_IN_MEMORY_MESSAGES)
+                            } else {
+                                messages
+                            }
+                        }
+                connection.copy(messages = trimmedMessages)
+            }
+        }
+
+        // Clear WHOIS cache (it's transient data that can be re-fetched)
+        val currentWhoisSize = _whoisCache.value.size
+        if (currentWhoisSize > 100) {
+            // Keep only the 50 most recent entries (arbitrary, could be improved)
+            _whoisCache.update { current ->
+                current.entries.toList().takeLast(50).associate { it.key to it.value }
+            }
+            Logger.d("DesktopConnectionManager", "Trimmed WHOIS cache from $currentWhoisSize to 50")
+        }
+
+        // Trim URL previews and image URLs caches
+        val currentPreviewSize = _urlPreviews.value.size
+        if (currentPreviewSize > 500) {
+            _urlPreviews.update { current ->
+                current.entries.toList().takeLast(250).associate { it.key to it.value }
+            }
+            Logger.d(
+                    "DesktopConnectionManager",
+                    "Trimmed URL previews cache from $currentPreviewSize to 250"
+            )
+        }
+
+        val currentImageSize = _imageUrls.value.size
+        if (currentImageSize > 500) {
+            _imageUrls.update { current ->
+                current.entries.toList().takeLast(250).associate { it.key to it.value }
+            }
+            Logger.d(
+                    "DesktopConnectionManager",
+                    "Trimmed image URLs cache from $currentImageSize to 250"
+            )
+        }
+
+        Logger.d("DesktopConnectionManager", "Periodic cleanup complete")
+    }
 
     fun setJoinPartQuitMode(mode: JoinPartQuitDisplayMode) {
         _joinPartQuitMode.value = mode
@@ -245,6 +324,7 @@ class DesktopConnectionManager {
             val configs = db.getAllServerConfigs()
             _savedConfigs.value = configs
             Logger.d("DesktopConnectionManager", "Loaded ${configs.size} saved server configs")
+            updateServerList()
         }
     }
 
@@ -432,6 +512,9 @@ class DesktopConnectionManager {
                         } else {
                             saveServerConfig(configToUse)
                         }
+                        // Refresh saved configs to ensure the new/updated server is in the list
+                        // source of truth
+                        loadSavedServers()
                     }
 
                     updateConnectionState(configToUse.id, ConnectionState.Connecting)
@@ -539,6 +622,9 @@ class DesktopConnectionManager {
                     _connections.update { it - serverId }
 
                     deleteServerConfig(serverId)
+                    // Refresh saved configs to ensure the deleted server is removed from the list
+                    // source of truth
+                    loadSavedServers()
 
                     if (_currentServerId.value == serverId) {
                         val nextServer = connections.keys.firstOrNull()
@@ -740,39 +826,44 @@ class DesktopConnectionManager {
                 addSystemMessage(serverId, target, IrcCommandParser.getHelpText())
             }
             is IrcCommand.SysInfo -> {
-                val args = command.args
-                val isPublic = args.contains("-o") || args.contains("--public")
-                val flags = setOf("-o", "--public", "-e", "--echo")
-                val subcommands = args.filter { !flags.contains(it) }.map { it.lowercase() }
+                try {
+                    val args = command.args
+                    val isPublic = args.contains("-o") || args.contains("--public")
+                    val flags = setOf("-o", "--public", "-e", "--echo")
+                    val subcommands = args.filter { !flags.contains(it) }.map { it.lowercase() }
 
-                val showAll =
-                        subcommands.isEmpty() ||
-                                subcommands.contains("full") ||
-                                subcommands.contains("all")
+                    val showAll =
+                            subcommands.isEmpty() ||
+                                    subcommands.contains("full") ||
+                                    subcommands.contains("all")
 
-                val sysInfo =
-                        getSystemInfo(
-                                hideOs = !showAll && !subcommands.contains("os"),
-                                hideCpu = !showAll && !subcommands.contains("cpu"),
-                                hideMemory =
-                                        !showAll &&
-                                                !subcommands.contains("memory") &&
-                                                !subcommands.contains("mem"),
-                                hideStorage =
-                                        !showAll &&
-                                                !subcommands.contains("storage") &&
-                                                !subcommands.contains("disk"),
-                                hideVga =
-                                        !showAll &&
-                                                !subcommands.contains("vga") &&
-                                                !subcommands.contains("gpu"),
-                                hideUptime = !showAll && !subcommands.contains("uptime")
-                        )
+                    val sysInfo =
+                            getSystemInfo(
+                                    hideOs = !showAll && !subcommands.contains("os"),
+                                    hideCpu = !showAll && !subcommands.contains("cpu"),
+                                    hideMemory =
+                                            !showAll &&
+                                                    !subcommands.contains("memory") &&
+                                                    !subcommands.contains("mem"),
+                                    hideStorage =
+                                            !showAll &&
+                                                    !subcommands.contains("storage") &&
+                                                    !subcommands.contains("disk"),
+                                    hideVga =
+                                            !showAll &&
+                                                    !subcommands.contains("vga") &&
+                                                    !subcommands.contains("gpu"),
+                                    hideUptime = !showAll && !subcommands.contains("uptime")
+                            )
 
-                if (isPublic) {
-                    sendMessageOrUsePastebin(connection, target, sysInfo)
-                } else {
-                    addSystemMessage(serverId, target, sysInfo)
+                    if (isPublic) {
+                        sendMessageOrUsePastebin(connection, target, sysInfo)
+                    } else {
+                        addSystemMessage(serverId, target, sysInfo)
+                    }
+                } catch (e: Exception) {
+                    Logger.e("DesktopConnectionManager", "Error executing /sysinfo command", e)
+                    addSystemMessage(serverId, target, "Error getting system info: ${e.message}")
                 }
             }
             is IrcCommand.Ignore -> {
@@ -1147,6 +1238,10 @@ class DesktopConnectionManager {
     }
 
     fun shutdown() {
+        // Cancel cleanup job
+        cleanupJob?.cancel()
+        cleanupJob = null
+
         // Cancel all reconnect jobs
         reconnectJobs.values.forEach { it.cancel() }
         reconnectJobs.clear()
@@ -1417,8 +1512,10 @@ class DesktopConnectionManager {
                     updatedMessages.getOrDefault(message.target, emptyList()).toMutableList()
             targetMessages.add(message)
 
-            if (targetMessages.size > 2000) {
-                targetMessages.removeAt(0)
+            if (targetMessages.size > MAX_IN_MEMORY_MESSAGES) {
+                // Remove oldest messages to keep within in-memory limit
+                val toRemove = targetMessages.size - MAX_IN_MEMORY_MESSAGES
+                repeat(toRemove) { targetMessages.removeAt(0) }
             }
 
             updatedMessages[message.target] = targetMessages
@@ -1753,19 +1850,32 @@ class DesktopConnectionManager {
     }
 
     private fun updateServerList() {
-        // Take a snapshot of values to avoid concurrent mod issues during map
-        val currentConnections = connections.values.toList()
+        // Use saved configs as the source of truth to ensure disconnected servers remain visible
+        val savedConfigs = _savedConfigs.value
+        val currentConnections = connections
 
         val newServerList =
-                currentConnections.map { connection ->
-                    ServerListItem(
-                            serverId = connection.serverId,
-                            serverName = connection.config.serverName,
-                            hostname = connection.config.hostname,
-                            isConnected = connection.isConnected(),
-                            unreadCount = connection.getUnreadCount(),
-                            channels = connection.channels
-                    )
+                savedConfigs.map { config ->
+                    val connection = currentConnections[config.id]
+                    if (connection != null) {
+                        ServerListItem(
+                                serverId = connection.serverId,
+                                serverName = connection.config.serverName,
+                                hostname = connection.config.hostname,
+                                isConnected = connection.isConnected(),
+                                unreadCount = connection.getUnreadCount(),
+                                channels = connection.channels
+                        )
+                    } else {
+                        ServerListItem(
+                                serverId = config.id,
+                                serverName = config.serverName,
+                                hostname = config.hostname,
+                                isConnected = false,
+                                unreadCount = 0,
+                                channels = emptyList()
+                        )
+                    }
                 }
         _servers.value = newServerList
     }

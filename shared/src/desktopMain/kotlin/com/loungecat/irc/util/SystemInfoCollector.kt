@@ -1,29 +1,34 @@
 package com.loungecat.irc.util
 
 import com.loungecat.irc.BuildConfig
-import java.io.File
-import java.lang.management.ManagementFactory
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
-import java.util.concurrent.TimeUnit
+import java.lang.management.ManagementFactory
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 object SystemInfoCollector {
 
     data class SysInfoData(
-        val client: String,
-        val os: String,
-        val cpu: String,
-        val memory: String,
-        val storage: String,
-        val vga: String,
-        val uptime: String
+            val client: String,
+            val os: String,
+            val cpu: String,
+            val memory: String,
+            val storage: String,
+            val vga: String,
+            val uptime: String
     )
 
-    fun getSystemInfo(hideOs: Boolean = false, hideCpu: Boolean = false, 
-                      hideMemory: Boolean = false, hideStorage: Boolean = false,
-                      hideVga: Boolean = false, hideUptime: Boolean = false): String {
-        
+    fun getSystemInfo(
+            hideOs: Boolean = false,
+            hideCpu: Boolean = false,
+            hideMemory: Boolean = false,
+            hideStorage: Boolean = false,
+            hideVga: Boolean = false,
+            hideUptime: Boolean = false
+    ): String {
+
         val data = collectData()
         val parts = mutableListOf<String>()
 
@@ -38,7 +43,7 @@ object SystemInfoCollector {
 
         return parts.joinToString(" • ")
     }
-    
+
     fun getOsInfo(): String = collectData().os
     fun getCpuInfo(): String = collectData().cpu
     fun getMemoryInfo(): String = collectData().memory
@@ -63,74 +68,96 @@ object SystemInfoCollector {
         // CPU
         var cpu = "Unknown"
         try {
-            cpu = when {
-                isLinux -> getLinuxCpu()
-                isWindows -> getWindowsCpu()
-                isMac -> getMacCpu()
-                else -> "Generic $osArch Processor"
-            }
+            cpu =
+                    when {
+                        isLinux -> getLinuxCpu()
+                        isWindows -> getWindowsCpu()
+                        isMac -> getMacCpu()
+                        else -> "Generic $osArch Processor"
+                    }
         } catch (e: Exception) {
             Logger.e("SysInfo", "Failed to get CPU info", e)
         }
 
         // Memory
-        val memory = try {
-            if (isLinux) getLinuxMemory() 
-            else getGenericMemory() 
-        } catch (e: Exception) {
-            "Unknown"
-        }
+        val memory =
+                try {
+                    if (isLinux) getLinuxMemory() else getGenericMemory()
+                } catch (e: Exception) {
+                    "Unknown"
+                }
 
         // Storage
-        val storage = try {
-            val roots = File.listRoots()
-            var total = 0L
-            var free = 0L
-            roots?.forEach { 
-                total += it.totalSpace
-                free += it.usableSpace
-            }
-            formatStorage(total, free)
-        } catch (e: Exception) {
-            "Unknown"
-        }
+        val storage =
+                try {
+                    val roots = File.listRoots()
+                    var total = 0L
+                    var free = 0L
+                    roots?.forEach {
+                        total += it.totalSpace
+                        free += it.usableSpace
+                    }
+                    formatStorage(total, free)
+                } catch (e: Exception) {
+                    "Unknown"
+                }
 
         // VGA
-        val vga = try {
-            when {
-                isLinux -> getLinuxGpu()
-                isWindows -> getWindowsGpu() // Tough without external deps usually
-                else -> ""
-            }
-        } catch (e: Exception) {
-             ""
-        }
+        val vga =
+                try {
+                    when {
+                        isLinux -> getLinuxGpu()
+                        isWindows -> getWindowsGpu() // Tough without external deps usually
+                        else -> ""
+                    }
+                } catch (e: Exception) {
+                    ""
+                }
 
         // Uptime
-        val uptime = try {
-            val uptimeMillis = ManagementFactory.getRuntimeMXBean().uptime
-            formatUptime(uptimeMillis)
-        } catch (e: Exception) {
-            "Unknown"
-        }
+        val uptime =
+                try {
+                    val uptimeMillis = ManagementFactory.getRuntimeMXBean().uptime
+                    formatUptime(uptimeMillis)
+                } catch (e: Exception) {
+                    "Unknown"
+                }
 
         return SysInfoData(client, osFull, cpu, memory, storage, vga, uptime)
     }
 
     private fun getLinuxCpu(): String {
         return try {
-            val process = Runtime.getRuntime().exec(arrayOf("/bin/sh", "-c", "cat /proc/cpuinfo | grep 'model name' | head -n 1"))
+            val process =
+                    Runtime.getRuntime()
+                            .exec(
+                                    arrayOf(
+                                            "/bin/sh",
+                                            "-c",
+                                            "cat /proc/cpuinfo | grep 'model name' | head -n 1"
+                                    )
+                            )
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val line = reader.readLine()
-            process.waitFor()
-            line?.substringAfter(":")?.trim() ?: "Unknown Linux CPU"
+            process.waitFor(2, TimeUnit.SECONDS) // Add timeout
+            if (line != null && line.isNotBlank()) {
+                line.substringAfter(":")?.trim() ?: getCpuFallback()
+            } else {
+                getCpuFallback()
+            }
         } catch (e: Exception) {
-            "Unknown Linux CPU"
+            getCpuFallback()
         }
     }
 
+    private fun getCpuFallback(): String {
+        val arch = System.getProperty("os.arch")
+        val cores = Runtime.getRuntime().availableProcessors()
+        return "Generic $arch Processor ($cores cores)"
+    }
+
     private fun getWindowsCpu(): String {
-         return try {
+        return try {
             val process = Runtime.getRuntime().exec("wmic cpu get name")
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             reader.readLine() // Header
@@ -144,7 +171,8 @@ object SystemInfoCollector {
 
     private fun getMacCpu(): String {
         return try {
-            val process = Runtime.getRuntime().exec(arrayOf("sysctl", "-n", "machdep.cpu.brand_string"))
+            val process =
+                    Runtime.getRuntime().exec(arrayOf("sysctl", "-n", "machdep.cpu.brand_string"))
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val line = reader.readLine()
             process.waitFor()
@@ -157,32 +185,41 @@ object SystemInfoCollector {
     private fun getLinuxMemory(): String {
         var total = 0L
         var available = 0L
-        
-        File("/proc/meminfo").forEachLine { line ->
-            if (line.startsWith("MemTotal:")) {
-                total = parseMemInfo(line)
-            } else if (line.startsWith("MemAvailable:")) {
-                available = parseMemInfo(line)
+        var found = false
+
+        try {
+            File("/proc/meminfo").forEachLine { line ->
+                if (line.startsWith("MemTotal:")) {
+                    total = parseMemInfo(line)
+                    found = true
+                } else if (line.startsWith("MemAvailable:")) {
+                    available = parseMemInfo(line)
+                }
             }
+        } catch (e: Exception) {
+            found = false
         }
-        
-        // If MemAvailable is missing (older kernels), try MemFree + Buffers + Cached? 
-        // For simplicity, stick to MemTotal/MemAvailable for now.
-        
-        return formatMemory(total, available)
+
+        if (found && total > 0) {
+            return formatMemory(total, available)
+        } else {
+            return getGenericMemory()
+        }
     }
-    
+
     private fun parseMemInfo(line: String): Long {
         // format: "MemTotal:       32780228 kB"
         val parts = line.split("\\s+".toRegex())
         if (parts.size >= 2) {
-             return parts[1].toLongOrNull()?.times(1024) ?: 0L
+            return parts[1].toLongOrNull()?.times(1024) ?: 0L
         }
         return 0L
     }
 
     private fun getGenericMemory(): String {
-        val bean = ManagementFactory.getOperatingSystemMXBean() as? com.sun.management.OperatingSystemMXBean
+        val bean =
+                ManagementFactory.getOperatingSystemMXBean() as?
+                        com.sun.management.OperatingSystemMXBean
         if (bean != null) {
             val total = bean.totalMemorySize
             val free = bean.freeMemorySize
@@ -190,35 +227,31 @@ object SystemInfoCollector {
         }
         return "Unknown"
     }
-    
+
     private fun getLinuxGpu(): String {
         return try {
-            val process = Runtime.getRuntime().exec(arrayOf("/bin/sh", "-c", "lspci | grep VGA | head -n 1"))
+            val process =
+                    Runtime.getRuntime()
+                            .exec(arrayOf("/bin/sh", "-c", "lspci | grep VGA | head -n 1"))
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val line = reader.readLine()
-            process.waitFor()
-            // line example: "0a:00.0 VGA compatible controller: NVIDIA Corporation GA106 [GeForce RTX 3060 Lite Hash Rate] (rev a1)"
-            // extract after last colon or just return the name
-            if (line != null) {
+            process.waitFor(2, TimeUnit.SECONDS)
+            if (line != null && line.isNotBlank()) {
                 val parts = line.split(":")
                 if (parts.size >= 3) {
-                     // Usually the GPU name is after the 2nd colon in standard lspci output?
-                     // 0a:00.0 VGA...: name
-                     // Actually lspci format varies.
-                     // The example output: "0a:00.0 VGA ... controller: Name"
-                     return line.substringAfter("controller:").trim()
+                    return line.substringAfter("controller:").trim()
                 }
                 return line.substringAfter("VGA compatible controller:").trim()
             }
-             ""
+            "Unknown (Sandboxed)"
         } catch (e: Exception) {
-             ""
+            "Unknown (Sandboxed)"
         }
     }
 
     private fun getWindowsGpu(): String {
-       // "wmic path win32_VideoController get name"
-       return try {
+        // "wmic path win32_VideoController get name"
+        return try {
             val process = Runtime.getRuntime().exec("wmic path win32_VideoController get name")
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             reader.readLine() // Header
@@ -237,12 +270,12 @@ object SystemInfoCollector {
     }
 
     private fun formatStorage(totalBytes: Long, freeBytes: Long): String {
-         val totalGiB = totalBytes / (1024.0 * 1024.0 * 1024.0)
-         val freeGiB = freeBytes / (1024.0 * 1024.0 * 1024.0)
-         // HexChat format: 197.9 GiB / 229.4 GiB (31.5 GiB Free)
-         // Used / Total (Free)
-         val usedGiB = totalGiB - freeGiB
-         return "%.1f GiB / %.1f GiB (%.1f GiB Free)".format(Locale.ROOT, usedGiB, totalGiB, freeGiB)
+        val totalGiB = totalBytes / (1024.0 * 1024.0 * 1024.0)
+        val freeGiB = freeBytes / (1024.0 * 1024.0 * 1024.0)
+        // HexChat format: 197.9 GiB / 229.4 GiB (31.5 GiB Free)
+        // Used / Total (Free)
+        val usedGiB = totalGiB - freeGiB
+        return "%.1f GiB / %.1f GiB (%.1f GiB Free)".format(Locale.ROOT, usedGiB, totalGiB, freeGiB)
     }
 
     private fun formatUptime(millis: Long): String {

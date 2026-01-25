@@ -831,7 +831,10 @@ fun ChatPanel(
                 }
 
                 Button(
-                        onClick = { showFilePicker = true },
+                        onClick = {
+                            com.loungecat.irc.util.Logger.d("ChatPanel", "Image upload clicked for: $channelName")
+                            showFilePicker = true
+                        },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                 ) { Text("Image Upload", color = Color.White) }
             }

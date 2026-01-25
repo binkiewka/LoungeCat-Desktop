@@ -135,6 +135,10 @@ fun main() {
             }
         }
         var isVisible by remember { mutableStateOf(true) }
+        // Window reference for restoration handling
+        var windowRef by remember { mutableStateOf<java.awt.Window?>(null) }
+        // Counter to trigger recomposition on restore
+        var restoreCounter by remember { mutableStateOf(0) }
 
         LaunchedEffect(Unit) {
             connectionManager.loadSavedServers()
@@ -269,6 +273,12 @@ fun main() {
                                                             action ->
                                                         scope.launch(Dispatchers.Main) {
                                                             isVisible = true
+                                                            restoreCounter++
+                                                            // Force window to front
+                                                            windowRef?.let { win ->
+                                                                win.toFront()
+                                                                win.requestFocus()
+                                                            }
                                                         }
                                                     }
                                             menu.add(openItem)
@@ -301,7 +311,10 @@ fun main() {
                                         try {
                                             systemTray?.shutdown()
                                         } catch (e: Exception) {
-                                            Logger.w("Main", "Failed to shutdown half-initialized tray")
+                                            Logger.w(
+                                                    "Main",
+                                                    "Failed to shutdown half-initialized tray"
+                                            )
                                         }
                                     }
                                 } catch (e: Throwable) {
@@ -440,8 +453,12 @@ fun main() {
                                         ) { // Left Click
                                             scope.launch(Dispatchers.Main) {
                                                 isVisible = true
-                                                // Optional: Bring to front logic could be added
-                                                // here if needed
+                                                restoreCounter++
+                                                // Force window to front
+                                                windowRef?.let { win ->
+                                                    win.toFront()
+                                                    win.requestFocus()
+                                                }
                                             }
                                         }
                                     }
@@ -538,11 +555,28 @@ fun main() {
                 }
         ) {
             val window = this.window
+
+            // Store window reference for tray restoration
+            LaunchedEffect(window) { windowRef = window }
+
+            // Handle window restoration - force recomposition and focus
+            LaunchedEffect(restoreCounter) {
+                if (restoreCounter > 0) {
+                    // Small delay to let window become visible
+                    kotlinx.coroutines.delay(100)
+                    window.toFront()
+                    window.requestFocus()
+                    // Force a repaint to ensure UI updates
+                    window.repaint()
+                    Logger.d("Main", "Window restored from tray, forced focus and repaint")
+                }
+            }
+
             DisposableEffect(Unit) {
                 if (System.getProperty("os.name").contains("Windows")) {
                     window.rootPane.putClientProperty("jetbrains.awt.windowDarkAppearance", true)
                 }
-                onDispose {}
+                onDispose { windowRef = null }
             }
 
             LoungeCatTheme(themeColors = themeColors) {
