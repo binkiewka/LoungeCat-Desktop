@@ -90,14 +90,17 @@ object SystemInfoCollector {
         // Storage
         val storage =
                 try {
-                    val roots = File.listRoots()
-                    var total = 0L
-                    var free = 0L
-                    roots?.forEach {
-                        total += it.totalSpace
-                        free += it.usableSpace
+                    if (isLinux) getLinuxStorage()
+                    else {
+                        val roots = File.listRoots()
+                        var total = 0L
+                        var free = 0L
+                        roots?.forEach {
+                            total += it.totalSpace
+                            free += it.usableSpace
+                        }
+                        formatStorage(total, free)
                     }
-                    formatStorage(total, free)
                 } catch (e: Exception) {
                     "Unknown"
                 }
@@ -117,8 +120,11 @@ object SystemInfoCollector {
         // Uptime
         val uptime =
                 try {
-                    val uptimeMillis = ManagementFactory.getRuntimeMXBean().uptime
-                    formatUptime(uptimeMillis)
+                    if (isLinux) getLinuxUptime()
+                    else {
+                        val uptimeMillis = ManagementFactory.getRuntimeMXBean().uptime
+                        formatUptime(uptimeMillis)
+                    }
                 } catch (e: Exception) {
                     "Unknown"
                 }
@@ -138,14 +144,14 @@ object SystemInfoCollector {
                                     )
                             )
             val reader = BufferedReader(InputStreamReader(process.inputStream))
-            val line = reader.readLine()
-            process.waitFor(2, TimeUnit.SECONDS) // Add timeout
-            if (line != null && line.isNotBlank()) {
-                line.substringAfter(":")?.trim() ?: getCpuFallback()
+            if (process.waitFor(2, TimeUnit.SECONDS)) {
+                val line = reader.readLine()
+                line?.substringAfter(":")?.trim() ?: getCpuFallback()
             } else {
+                process.destroyForcibly()
                 getCpuFallback()
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             getCpuFallback()
         }
     }
@@ -234,17 +240,20 @@ object SystemInfoCollector {
                     Runtime.getRuntime()
                             .exec(arrayOf("/bin/sh", "-c", "lspci | grep VGA | head -n 1"))
             val reader = BufferedReader(InputStreamReader(process.inputStream))
-            val line = reader.readLine()
-            process.waitFor(2, TimeUnit.SECONDS)
-            if (line != null && line.isNotBlank()) {
-                val parts = line.split(":")
-                if (parts.size >= 3) {
-                    return line.substringAfter("controller:").trim()
+            if (process.waitFor(2, TimeUnit.SECONDS)) {
+                val line = reader.readLine()
+                if (line != null && line.isNotBlank()) {
+                    val parts = line.split(":")
+                    if (parts.size >= 3) {
+                        return line.substringAfter("controller:").trim()
+                    }
+                    return line.substringAfter("VGA compatible controller:").trim()
                 }
-                return line.substringAfter("VGA compatible controller:").trim()
+            } else {
+                process.destroyForcibly()
             }
             "Unknown (Sandboxed)"
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             "Unknown (Sandboxed)"
         }
     }
@@ -276,6 +285,75 @@ object SystemInfoCollector {
         // Used / Total (Free)
         val usedGiB = totalGiB - freeGiB
         return "%.1f GiB / %.1f GiB (%.1f GiB Free)".format(Locale.ROOT, usedGiB, totalGiB, freeGiB)
+    }
+
+    private fun getLinuxUptime(): String {
+        return try {
+            val uptimeSeconds = File("/proc/uptime").readText().split(" ")[0].toDouble()
+            formatUptime((uptimeSeconds * 1000).toLong())
+        } catch (e: Exception) {
+            val uptimeMillis = ManagementFactory.getRuntimeMXBean().uptime
+            formatUptime(uptimeMillis)
+        }
+    }
+
+    private fun getLinuxStorage(): String {
+        var total = 0L
+        var free = 0L
+        val processedDevices = mutableSetOf<String>()
+
+        try {
+            File("/proc/mounts").forEachLine { line ->
+                val parts = line.split("\\s+".toRegex())
+                if (parts.size >= 3) {
+                    val device = parts[0]
+                    val mountPoint = parts[1]
+                    val fsType = parts[2]
+
+                    // Filter for physical-like filesystems
+                    if (!processedDevices.contains(device) && shouldIncludeFs(device, fsType)) {
+                        try {
+                            val file = File(mountPoint)
+                            total += file.totalSpace
+                            free += file.usableSpace
+                            processedDevices.add(device)
+                        } catch (e: Exception) {
+                            // Ignore specific mount failure
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Fallback to roots if reading mounts fails
+            val roots = File.listRoots()
+            roots?.forEach {
+                total += it.totalSpace
+                free += it.usableSpace
+            }
+        }
+        return formatStorage(total, free)
+    }
+
+    private fun shouldIncludeFs(device: String, fsType: String): Boolean {
+        if (device.startsWith("/dev/loop")) return false
+        if (device.startsWith("/dev/ram")) return false
+
+        val validTypes =
+                setOf(
+                        "ext4",
+                        "ext3",
+                        "ext2",
+                        "btrfs",
+                        "xfs",
+                        "zfs",
+                        "ntfs",
+                        "vfat",
+                        "exfat",
+                        "hfs",
+                        "apfs"
+                )
+        return validTypes.contains(fsType) ||
+                (device.startsWith("/dev/") && !fsType.contains("tmpfs"))
     }
 
     private fun formatUptime(millis: Long): String {

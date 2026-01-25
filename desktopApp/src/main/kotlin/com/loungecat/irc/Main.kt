@@ -584,6 +584,8 @@ fun main() {
             }
         }
     }
+    // Force exit to ensure all threads (e.g. IO, Dorkbox) are terminated
+    exitProcess(0)
 }
 
 // Helper to check if we are running on Linux

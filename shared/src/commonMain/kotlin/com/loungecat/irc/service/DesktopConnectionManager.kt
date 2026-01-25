@@ -617,42 +617,53 @@ class DesktopConnectionManager {
     fun removeServer(serverId: Long) {
         managerScope.launch {
             connectionMutex.withLock {
+                // 1. Try to disconnect/cleanup if actively connected
                 connections[serverId]?.let { connection ->
-                    connection.client.disconnect()
-                    _connections.update { it - serverId }
-
-                    deleteServerConfig(serverId)
-                    // Refresh saved configs to ensure the deleted server is removed from the list
-                    // source of truth
-                    loadSavedServers()
-
-                    if (_currentServerId.value == serverId) {
-                        val nextServer = connections.keys.firstOrNull()
-                        if (nextServer != null) {
-                            switchToServer(nextServer)
-                        } else {
-                            _currentServerId.value = null
-                            _connectionState.value = ConnectionState.Disconnected
-                            _channels.value = emptyList()
-                            _messages.value = emptyMap()
-                            _currentChannel.value = null
-                        }
+                    try {
+                        connection.client.disconnect()
+                    } catch (e: Exception) {
+                        Logger.e(
+                                "DesktopConnectionManager",
+                                "Error disconnecting server during removal: $serverId",
+                                e
+                        )
                     }
-
-                    // Cancel listeners
+                    // Cancel listeners specific to this connection
                     connectionListenerJobs[serverId]?.forEach { it.cancel() }
                     connectionListenerJobs.remove(serverId)
-
-                    // Cancel reconnect jobs
-                    reconnectJobs[serverId]?.cancel()
-                    reconnectJobs.remove(serverId)
-
-                    // Cancel stability jobs
-                    connectionStabilityJobs[serverId]?.cancel()
-                    connectionStabilityJobs.remove(serverId)
-
-                    updateServerList()
                 }
+
+                // 2. Remove from active connections map (works even if not present)
+                _connections.update { it - serverId }
+
+                // 3. Cancel all associated jobs (idempotent)
+                reconnectJobs[serverId]?.cancel()
+                reconnectJobs.remove(serverId)
+
+                connectionStabilityJobs[serverId]?.cancel()
+                connectionStabilityJobs.remove(serverId)
+
+                // 4. Delete configuration from database
+                deleteServerConfig(serverId)
+                
+                // 5. Refresh source of truth
+                loadSavedServers()
+
+                // 6. Update UI state if we removed the active server
+                if (_currentServerId.value == serverId) {
+                    val nextServer = connections.keys.firstOrNull()
+                    if (nextServer != null) {
+                        switchToServer(nextServer)
+                    } else {
+                        _currentServerId.value = null
+                        _connectionState.value = ConnectionState.Disconnected
+                        _channels.value = emptyList()
+                        _messages.value = emptyMap()
+                        _currentChannel.value = null
+                    }
+                }
+
+                updateServerList()
             }
         }
     }
@@ -861,8 +872,12 @@ class DesktopConnectionManager {
                     } else {
                         addSystemMessage(serverId, target, sysInfo)
                     }
-                } catch (e: Exception) {
-                    Logger.e("DesktopConnectionManager", "Error executing /sysinfo command", e)
+                } catch (e: Throwable) {
+                    Logger.e(
+                            "DesktopConnectionManager",
+                            "Error executing /sysinfo command",
+                            e as? Exception ?: Exception(e)
+                    )
                     addSystemMessage(serverId, target, "Error getting system info: ${e.message}")
                 }
             }
@@ -1247,7 +1262,6 @@ class DesktopConnectionManager {
         reconnectJobs.clear()
 
         // Cancel all listener jobs
-        // Cancel all listener jobs
         connectionListenerJobs.values.flatten().forEach { it.cancel() }
         connectionListenerJobs.clear()
 
@@ -1255,7 +1269,26 @@ class DesktopConnectionManager {
         connectionStabilityJobs.values.forEach { it.cancel() }
         connectionStabilityJobs.clear()
 
-        disconnectAll()
+        // Attempt graceful disconnect
+        try {
+            runBlocking {
+                withTimeout(2000) { // 2 second timeout for graceful shutdown
+                    val disconnectJobs = connections.values.map { connection ->
+                        launch(Dispatchers.IO) {
+                            try {
+                                connection.client.disconnect()
+                            } catch (e: Exception) {
+                                Logger.e("DesktopConnectionManager", "Error during shutdown disconnect", e)
+                            }
+                        }
+                    }
+                    disconnectJobs.joinAll()
+                }
+            }
+        } catch (e: Exception) {
+            Logger.e("DesktopConnectionManager", "Shutdown timeout or error", e)
+        }
+
         managerScope.cancel()
     }
 
@@ -1855,7 +1888,7 @@ class DesktopConnectionManager {
         val currentConnections = connections
 
         val newServerList =
-                savedConfigs.map { config ->
+                savedConfigs.distinctBy { it.id }.map { config ->
                     val connection = currentConnections[config.id]
                     if (connection != null) {
                         ServerListItem(
