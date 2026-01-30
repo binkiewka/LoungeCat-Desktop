@@ -75,6 +75,8 @@ sealed class IrcCommand {
 
     data class SysInfo(val args: kotlin.collections.List<String>) : IrcCommand()
 
+    data class Znc(val args: String) : IrcCommand()
+
     data object NotACommand : IrcCommand()
     data class Unknown(val command: String, val args: String) : IrcCommand()
 }
@@ -276,6 +278,7 @@ object IrcCommandParser {
                         if (args.isNotBlank()) args.trim().split("\\s+".toRegex()) else emptyList()
                 IrcCommand.SysInfo(sysParts)
             }
+            "znc" -> IrcCommand.Znc(args.trim())
             "clear", "cls" -> IrcCommand.Clear
             "help", "commands", "?" -> IrcCommand.Help
             else -> IrcCommand.Unknown(command, args)
@@ -293,7 +296,7 @@ object IrcCommandParser {
         |SERVICES: /identify /ns /cs /ms
         |SERVER: /quit /raw /ping /time /version /motd /info /links /map /lusers /admin
         |IRCOP: /oper /kill /kline /gline /zline /rehash /restart /die /wallops /saje
-        |CLIENT: /clear /sysinfo /help
+        |CLIENT: /clear /sysinfo /help /znc
         |
         |TIP: Use // to send a message starting with /
     """.trimMargin()

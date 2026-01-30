@@ -36,7 +36,7 @@ compose.desktop {
     application {
         mainClass = "com.loungecat.irc.MainKt"
         
-        jvmArgs += listOf("-Xmx512m")
+        jvmArgs += listOf("-Xmx2048m")
         
         nativeDistributions {
             targetFormats(TargetFormat.Deb, TargetFormat.AppImage, TargetFormat.Msi, TargetFormat.Rpm)
@@ -45,7 +45,7 @@ compose.desktop {
             description = "Loungecat"
             vendor = "LoungeCat"
             
-            modules("java.sql", "java.naming", "jdk.unsupported", "java.net.http")
+            modules("java.sql", "java.naming", "jdk.unsupported", "java.net.http", "java.management")
             
             linux {
                 iconFile.set(project.file("../shared/src/commonMain/composeResources/drawable/icon.png"))

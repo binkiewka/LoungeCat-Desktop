@@ -103,143 +103,54 @@ class IrcClient(
                             }
                             .then()
 
-            client = clientBuilder.build()
-
-            // Proxy Injection (Reflection)
+            // Native Proxy Configuration
             if (config.proxyType != ProxyType.NONE && config.proxyHost.isNotBlank()) {
-                try {
-                    Logger.d("IrcClient", "Attempting to inject proxy via reflection...")
-
-                    val clientImpl = client!!
-
-                    // Search for Bootstrap field in client implementation
-                    var bootstrapField: java.lang.reflect.Field? = null
-                    var currentClass: Class<*>? = clientImpl.javaClass
-
-                    while (currentClass != null) {
-                        try {
-                            for (field in currentClass.declaredFields) {
-                                // Check for Bootstrap field (by type name to find it, but we need
-                                // the object)
-                                if (field.type.name.endsWith("Bootstrap")) {
-                                    bootstrapField = field
-                                    break
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Logger.w("IrcClient", "Failed to inspect fields in ${currentClass.name} during proxy injection")
+                val kittehProxyType =
+                        when (config.proxyType) {
+                            ProxyType.SOCKS ->
+                                    org.kitteh.irc.client.library.feature.network.ProxyType.SOCKS_5
+                            else -> null
                         }
-                        if (bootstrapField != null) break
-                        currentClass = currentClass.superclass
-                    }
 
-                    if (bootstrapField != null) {
-                        bootstrapField.isAccessible = true
-                        val bootstrap =
-                                bootstrapField.get(clientImpl) as? io.netty.bootstrap.Bootstrap
-
-                        if (bootstrap != null) {
-                            val originalHandler = bootstrap.config().handler()
-
-                            bootstrap.handler(
-                                    object :
-                                            io.netty.channel.ChannelInitializer<
-                                                    io.netty.channel.socket.SocketChannel>() {
-                                        override fun initChannel(
-                                                ch: io.netty.channel.socket.SocketChannel
-                                        ) {
-                                            val pipeline = ch.pipeline()
-
-                                            val proxyAddress =
-                                                    java.net.InetSocketAddress(
-                                                            config.proxyHost,
-                                                            config.proxyPort
-                                                    )
-
-                                            Logger.d(
-                                                    "IrcClient",
-                                                    "Injecting ${config.proxyType} proxy handler for $proxyAddress"
-                                            )
-
-                                            if (config.proxyType == ProxyType.HTTP) {
-                                                val user = config.proxyUsername
-                                                val pass = config.proxyPassword
-                                                if (!user.isNullOrEmpty() && !pass.isNullOrEmpty()
-                                                ) {
-                                                    pipeline.addFirst(
-                                                            "proxy",
-                                                            io.netty.handler.proxy.HttpProxyHandler(
-                                                                    proxyAddress,
-                                                                    user,
-                                                                    pass
-                                                            )
-                                                    )
-                                                } else {
-                                                    pipeline.addFirst(
-                                                            "proxy",
-                                                            io.netty.handler.proxy.HttpProxyHandler(
-                                                                    proxyAddress
-                                                            )
-                                                    )
-                                                }
-                                            } else if (config.proxyType == ProxyType.SOCKS) {
-                                                val user = config.proxyUsername
-                                                val pass = config.proxyPassword
-                                                if (!user.isNullOrEmpty() && !pass.isNullOrEmpty()
-                                                ) {
-                                                    pipeline.addFirst(
-                                                            "proxy",
-                                                            io.netty.handler.proxy
-                                                                    .Socks5ProxyHandler(
-                                                                            proxyAddress,
-                                                                            user,
-                                                                            pass
-                                                                    )
-                                                    )
-                                                } else {
-                                                    pipeline.addFirst(
-                                                            "proxy",
-                                                            io.netty.handler.proxy
-                                                                    .Socks5ProxyHandler(
-                                                                            proxyAddress
-                                                                    )
-                                                    )
-                                                }
-                                            }
-
-                                            // Chain original handler
-                                            if (originalHandler != null) {
-                                                pipeline.addLast(originalHandler)
-                                            }
-                                        }
-                                    }
-                            )
-                            Logger.d(
-                                    "IrcClient",
-                                    "Proxy injected successfully into Netty Bootstrap"
-                            )
-                        } else {
-                            Logger.e(
-                                    "IrcClient",
-                                    "Bootstrap field found but valid instance was null or not standard Bootstrap"
-                            )
-                        }
-                    } else {
-                        Logger.e(
-                                "IrcClient",
-                                "Could not find Bootstrap field in Client class: ${clientImpl.javaClass.name}"
-                        )
-                    }
-                } catch (e: Exception) {
-                    Logger.e("IrcClient", "Failed to inject proxy via reflection", e)
+                if (kittehProxyType != null) {
+                    val proxyHost = config.proxyHost.trim()
+                    Logger.i(
+                            "IrcClient",
+                            "Configuring native proxy: $kittehProxyType $proxyHost:${config.proxyPort}"
+                    )
+                    clientBuilder
+                            .proxy()
+                            .proxyType(kittehProxyType)
+                            .proxyHost(proxyHost)
+                            .proxyPort(config.proxyPort)
+                            .then()
+                } else if (config.proxyType == ProxyType.HTTP) {
+                    Logger.w(
+                            "IrcClient",
+                            "HTTP proxy requested but not supported by native Kitteh client. Connection will be direct."
+                    )
                 }
             }
+
+            client = clientBuilder.build()
 
             if (config.useSasl &&
                             !config.saslUsername.isNullOrEmpty() &&
                             !config.saslPassword.isNullOrEmpty()
             ) {
                 Logger.d("IrcClient", "Configuring SASL PLAIN authentication")
+                clientBuilder
+                        .proxy() // Ensure we don't break fluent chain if needed, though mostly
+                        // irrelevant here
+                        .then() // Just access
+
+                // Add Check for SSL+Proxy
+                if (config.useSsl && config.proxyType != ProxyType.NONE) {
+                    Logger.w(
+                            "IrcClient",
+                            "WARNING: SOCKS/HTTP Proxy with SSL is known to fail in this library version. If connection fails, try disabling SSL or using a plaintext port (e.g. 6667) via the proxy."
+                    )
+                }
                 try {
                     client?.authManager?.addProtocol(
                             org.kitteh.irc.client.library.feature.auth.SaslPlain(

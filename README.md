@@ -75,7 +75,6 @@
   - **SOCKS4/5** and **HTTP** proxy support for privacy and bypassing restrictions.
   - **Authentication**: Full support for proxy username/password authentication.
   - Configure proxies per-server for granular control.
-  - Configure proxies per-server for granular control.
 - **Privacy & Security**:
   - **Link Preview Privacy**:
     - **Proxy Support**: Fetch previews through a proxy to hide your IP.

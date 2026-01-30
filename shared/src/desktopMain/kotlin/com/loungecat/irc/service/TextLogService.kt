@@ -4,6 +4,7 @@ import com.loungecat.irc.data.model.IncomingMessage
 import com.loungecat.irc.util.Logger
 import java.io.File
 import java.text.SimpleDateFormat
+import java.time.LocalDateTime
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
@@ -125,6 +126,34 @@ object TextLogService {
         source.delete()
     }
 
+    private fun debugLog(message: String) {
+        try {
+            val file = File(System.getProperty("user.home"), ".loungecat/debug_history.txt")
+            val timestamp = LocalDateTime.now().toString()
+            file.appendText("[$timestamp] $message\n")
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+
+    private fun getBestServerDirectory(safeServerName: String): File {
+        val root = logDir ?: return File(safeServerName) // Should not happen if init called
+
+        // 1. Try exact match
+        val exactMatch = File(root, safeServerName)
+        if (exactMatch.exists() && exactMatch.isDirectory) {
+            return exactMatch
+        }
+
+        // 2. Try case-insensitive match to reuse existing legacy folders
+        val caseInsensitiveMatch =
+                root.listFiles()?.find {
+                    it.isDirectory && it.name.equals(safeServerName, ignoreCase = true)
+                }
+
+        return caseInsensitiveMatch ?: exactMatch
+    }
+
     fun logFromMessage(
             serverId: Long,
             serverName: String,
@@ -137,8 +166,8 @@ object TextLogService {
                 val safeServerName = serverName.replace(Regex("[^a-zA-Z0-9_#-]"), "_")
                 val safeChannelName = channelName.replace(Regex("[^a-zA-Z0-9_#-]"), "_")
 
-                // Create server directory
-                val serverDir = File(logDir, safeServerName)
+                // Resolve directory: Use existing if available (ignoring case) to prevent splits
+                val serverDir = getBestServerDirectory(safeServerName)
                 if (!serverDir.exists()) {
                     serverDir.mkdirs()
                 }
@@ -155,49 +184,73 @@ object TextLogService {
             }
         }
     }
+
     fun readLastMessages(
             serverId: Long,
             serverName: String,
             channelName: String,
             limit: Int
     ): List<IncomingMessage> {
+        debugLog("readLastMessages called for Server: '$serverName', Channel: '$channelName'")
         val messages = mutableListOf<IncomingMessage>()
         try {
-            // Sanitize names for file paths (same logic as writing)
+            // Sanitize names
             val safeServerName = serverName.replace(Regex("[^a-zA-Z0-9_#-]"), "_")
             val safeChannelName = channelName.replace(Regex("[^a-zA-Z0-9_#-]"), "_")
 
-            val serverDir = File(logDir, safeServerName)
-            val logFile = File(serverDir, "$safeChannelName.log")
+            debugLog("Sanitized: Server='$safeServerName', Channel='$safeChannelName'")
 
-            if (logFile.exists()) {
-                readLogFile(logFile, limit, channelName, messages)
-            } else {
-                // FALLBACK: Check for legacy filename where '#' might have been replaced by '_'
-                // or just standard legacy sanitization.
-                val legacySafeName = safeChannelName.replace("#", "_")
-                val legacyFile = File(serverDir, "$legacySafeName.log")
-                if (legacyFile.exists()) {
-                    Logger.d("TextLogService", "Found legacy log file: ${legacyFile.name}")
-                    readLogFile(legacyFile, limit, channelName, messages)
-                } else {
-                    // FALLBACK 2: Case-insensitive search
-                    // This is expensive so only do it if direct lookups fail
-                    val foundFile =
-                            serverDir.listFiles()?.find {
-                                it.name.equals("$safeChannelName.log", ignoreCase = true) ||
-                                        it.name.equals("$legacySafeName.log", ignoreCase = true)
-                            }
-                    if (foundFile != null) {
-                        Logger.d(
-                                "TextLogService",
-                                "Found log file via fuzzy search: ${foundFile.name}"
-                        )
-                        readLogFile(foundFile, limit, channelName, messages)
+            // Identify ALL candidate directories (exact + case variants)
+            val root = logDir
+            val candidateDirs = mutableSetOf<File>()
+
+            if (root != null && root.exists()) {
+                // 1. Possible exact match
+                candidateDirs.add(File(root, safeServerName))
+
+                // 2. Search for any other case variants
+                root.listFiles()?.forEach { file ->
+                    if (file.isDirectory && file.name.equals(safeServerName, ignoreCase = true)) {
+                        candidateDirs.add(file)
                     }
                 }
             }
+
+            val validDirs = candidateDirs.filter { it.exists() && it.isDirectory }
+            debugLog("Found candidates: ${validDirs.map { it.name }}")
+
+            // Read from ALL valid candidates
+            validDirs.forEach { dir ->
+                val logFile = File(dir, "$safeChannelName.log")
+                debugLog("Checking file: ${logFile.absolutePath}, exists=${logFile.exists()}")
+
+                if (logFile.exists()) {
+                    readLogFile(logFile, limit, channelName, messages)
+                }
+
+                // Also check for legacy '#' -> '_' replacement in filenames
+                val legacySafeName = safeChannelName.replace("#", "_")
+                val legacyFile = File(dir, "$legacySafeName.log")
+                if (legacyFile.exists() && legacyFile.absolutePath != logFile.absolutePath) {
+                    debugLog(
+                            "Checking legacy file: ${legacyFile.absolutePath}, exists=${legacyFile.exists()}"
+                    )
+                    readLogFile(legacyFile, limit, channelName, messages)
+                }
+            }
+
+            debugLog("Messages read count: ${messages.size}")
+
+            // Deduplicate (simple strategy based on timestamp + sender + content)
+            // We sort by timestamp first
+            if (messages.isNotEmpty()) {
+                return messages
+                        .distinctBy { "${it.timestamp}-${it.sender}-${it.content}" }
+                        .sortedBy { it.timestamp }
+                        .takeLast(limit)
+            }
         } catch (e: Exception) {
+            debugLog("Exception: ${e.message}")
             Logger.e("TextLogService", "Failed to read logs for $channelName", e)
         }
         return messages
@@ -206,8 +259,8 @@ object TextLogService {
     private fun parseLogLine(line: String, channelName: String): IncomingMessage? {
         try {
             // Format: [yyyy-MM-dd HH:mm:ss] <sender> content
-            // Regex to parse
-            val regex = Regex("^\\[(.*?)\\] <(.*?)> (.*)$")
+            // Regex to parse. Updated to be more flexible with spacing after sender.
+            val regex = Regex("^\\[(.*?)\\] <(.*?)>\\s?(.*)$")
             val matchResult = regex.find(line)
 
             if (matchResult != null) {
@@ -220,7 +273,7 @@ object TextLogService {
                         target = channelName,
                         content = content,
                         type = com.loungecat.irc.data.model.MessageType.NORMAL,
-                        isSelf = false // We can't easily know if it was self, assuming false/other
+                        isSelf = false
                 )
             }
         } catch (e: Exception) {
@@ -228,6 +281,7 @@ object TextLogService {
         }
         return null
     }
+
     private fun readLogFile(
             file: File,
             limit: Int,
@@ -238,8 +292,20 @@ object TextLogService {
             val lines = file.readLines()
             val linesToProcess = if (lines.size > limit) lines.takeLast(limit) else lines
 
+            var failureCount = 0
             linesToProcess.forEach { line ->
-                parseLogLine(line, channelName)?.let { messages.add(it) }
+                val parsed = parseLogLine(line, channelName)
+                if (parsed != null) {
+                    messages.add(parsed)
+                } else {
+                    failureCount++
+                    if (failureCount <= 10) { // Log first 10 failures max
+                        debugLog("Parse Failed: '$line'")
+                    }
+                }
+            }
+            if (failureCount > 0) {
+                debugLog("Total lines failed to parse in ${file.name}: $failureCount")
             }
         } catch (e: Exception) {
             Logger.e("TextLogService", "Failed to read log file: ${file.name}", e)

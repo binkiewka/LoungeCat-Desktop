@@ -169,6 +169,17 @@ class DesktopConnectionManager {
         }
 
         Logger.d("DesktopConnectionManager", "Periodic cleanup complete")
+
+        // Log memory usage statistics
+        val runtime = Runtime.getRuntime()
+        val usedMemory = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
+        val totalMemory = runtime.totalMemory() / 1024 / 1024
+        val maxMemory = runtime.maxMemory() / 1024 / 1024
+
+        Logger.d(
+                "DesktopConnectionManager",
+                "Memory Stats: Used=${usedMemory}MB, Total=${totalMemory}MB, Max=${maxMemory}MB"
+        )
     }
 
     fun setJoinPartQuitMode(mode: JoinPartQuitDisplayMode) {
@@ -586,7 +597,8 @@ class DesktopConnectionManager {
                                     channels = emptyList(),
                                     messages = emptyMap(),
                                     manuallyDisconnected = true,
-                                    reconnectAttempt = 0 // Reset on manual disconnect
+                                    reconnectAttempt = 0, // Reset on manual disconnect
+                                    historyLoadedChannels = emptySet()
                             )
                     _connections.update { it + (serverId to updatedConnection) }
 
@@ -645,7 +657,7 @@ class DesktopConnectionManager {
 
                 // 4. Delete configuration from database
                 deleteServerConfig(serverId)
-                
+
                 // 5. Refresh source of truth
                 loadSavedServers()
 
@@ -881,6 +893,18 @@ class DesktopConnectionManager {
                     addSystemMessage(serverId, target, "Error getting system info: ${e.message}")
                 }
             }
+            is IrcCommand.Znc -> {
+                // Ensure *status window is open so the reply goes there
+                startPrivateMessage("*status")
+
+                val msg = command.args
+                if (msg.isNotBlank()) {
+                    connection.client.sendRawCommand("PRIVMSG *status :$msg")
+                    addSystemMessage(serverId, "*status", "-> $msg")
+                } else {
+                    addSystemMessage(serverId, target, "Usage: /znc <command>")
+                }
+            }
             is IrcCommand.Ignore -> {
                 ignoreUser(command.nickname)
                 addSystemMessage(serverId, target, "Ignored user: ${command.nickname}")
@@ -1061,11 +1085,11 @@ class DesktopConnectionManager {
         _connections.update { currentConnections ->
             val connection = currentConnections[serverId] ?: return@update currentConnections
 
-            // Try to load connected messages if we don't have any for this channel
-            val currentChannelMessages = connection.messages[channelName]
+            // detailed history loading logic
+            val historyLoaded = connection.historyLoadedChannels.contains(channelName)
             val updatedMessages =
-                    if (currentChannelMessages.isNullOrEmpty()) {
-                        // Try to load from cache
+                    if (!historyLoaded) {
+                        // Load history (Cache + Logs)
                         val limit = _userPreferences.value.historyReplayLines
                         val cachedMessages =
                                 messageCacheLoader?.invoke(serverId, channelName) ?: emptyList()
@@ -1090,43 +1114,55 @@ class DesktopConnectionManager {
                                     }
 
                                     // Merge and deduplicate
-                                    // We prioritize cached messages as they might have more
-                                    // metadata
-                                    // Deduplication strategy: strict timestamp + content + sender
-                                    // match
-                                    val allMessages = cachedMessages + logMessages
-                                    val uniqueMessages =
-                                            allMessages
+                                    // Combine cache + logs
+                                    val historyMessages = cachedMessages + logMessages
+                                    val uniqueHistory =
+                                            historyMessages
                                                     .distinctBy {
                                                         "${it.timestamp / 1000}-${it.sender}-${it.content}"
                                                     }
                                                     .sortedBy { it.timestamp }
 
-                                    uniqueMessages
+                                    uniqueHistory
                                 } else {
                                     cachedMessages
                                 }
 
                         // We might want to respect the limit here immediately for display
-                        val displayedMessages =
+                        val displayedHistory =
                                 if (messagesToUse.size > limit) {
                                     messagesToUse.takeLast(limit)
                                 } else {
                                     messagesToUse
                                 }
 
-                        if (displayedMessages.isNotEmpty()) {
+                        if (displayedHistory.isNotEmpty()) {
                             Logger.d(
                                     "DesktopConnectionManager",
-                                    "Loaded ${displayedMessages.size} messages (cache/logs) for $channelName"
+                                    "Loaded ${displayedHistory.size} historical messages for $channelName"
                             )
-                            // Process URLs for previews in cached messages
-                            displayedMessages.forEach { msg ->
+                            // Process URLs for previews in historical messages
+                            displayedHistory.forEach { msg ->
                                 if (msg.type == MessageType.NORMAL) {
                                     processMessageUrls(serverId, msg)
                                 }
                             }
-                            connection.messages + (channelName to displayedMessages)
+
+                            // MERGE WITH EXISTING (REAL-TIME) MESSAGES
+                            // If we received messages while history was loading or before it loaded
+                            val existingMessages = connection.messages[channelName] ?: emptyList()
+                            val combined = displayedHistory + existingMessages
+
+                            // Final deduplication to be safe (in case real-time msg triggers
+                            // duplicate from history)
+                            val finalMessages =
+                                    combined
+                                            .distinctBy {
+                                                "${it.timestamp / 1000}-${it.sender}-${it.content}"
+                                            }
+                                            .sortedBy { it.timestamp }
+
+                            connection.messages + (channelName to finalMessages)
                         } else {
                             connection.messages
                         }
@@ -1134,8 +1170,16 @@ class DesktopConnectionManager {
                         connection.messages
                     }
 
+            val newHistoryLoadedSet =
+                    if (!historyLoaded) connection.historyLoadedChannels + channelName
+                    else connection.historyLoadedChannels
+
             val updatedConnection =
-                    connection.copy(currentChannel = channelName, messages = updatedMessages)
+                    connection.copy(
+                            currentChannel = channelName,
+                            messages = updatedMessages,
+                            historyLoadedChannels = newHistoryLoadedSet
+                    )
 
             // Side effects (updating other observables) - risky inside update block if they trigger
             // other updates
@@ -1273,15 +1317,20 @@ class DesktopConnectionManager {
         try {
             runBlocking {
                 withTimeout(2000) { // 2 second timeout for graceful shutdown
-                    val disconnectJobs = connections.values.map { connection ->
-                        launch(Dispatchers.IO) {
-                            try {
-                                connection.client.disconnect()
-                            } catch (e: Exception) {
-                                Logger.e("DesktopConnectionManager", "Error during shutdown disconnect", e)
+                    val disconnectJobs =
+                            connections.values.map { connection ->
+                                launch(Dispatchers.IO) {
+                                    try {
+                                        connection.client.disconnect()
+                                    } catch (e: Exception) {
+                                        Logger.e(
+                                                "DesktopConnectionManager",
+                                                "Error during shutdown disconnect",
+                                                e
+                                        )
+                                    }
+                                }
                             }
-                        }
-                    }
                     disconnectJobs.joinAll()
                 }
             }
@@ -1553,10 +1602,8 @@ class DesktopConnectionManager {
 
             updatedMessages[message.target] = targetMessages
 
-            val updatedConnection = connection.copy(messages = updatedMessages)
-
-            // Side effect: Save to cache (safe to call here or outside, but we need targetMessages)
-            // If it's a topic update, pass the topic
+            // Side effect: Save to cache
+            // We do this inside the flow update context, but it's just a callback invocation
             val topicToSave =
                     if (message.type == MessageType.TOPIC) {
                         if (message.content.startsWith("Topic: ")) message.content.substring(7)
@@ -1565,27 +1612,24 @@ class DesktopConnectionManager {
 
             messageCacheSaver?.invoke(serverId, message.target, targetMessages, topicToSave)
 
-            currentConnections + (serverId to updatedConnection)
-        }
-
-        // Update Unread Counts
-        // We do this separately to ensure we are modifying the 'latest' connection state
-        // and because it modifies 'channels', not 'messages'.
-        if (!message.isSelf && message.type == MessageType.NORMAL) {
-            _connections.update { currentConnections ->
-                val connection = currentConnections[serverId] ?: return@update currentConnections
-                val currentChannels = connection.channels.toMutableList()
+            // Update Unread Counts
+            val currentChannels = connection.channels.toMutableList()
+            if (!message.isSelf && message.type == MessageType.NORMAL) {
                 val index = currentChannels.indexOfFirst { it.name == message.target }
-
                 if (index != -1) {
                     val channel = currentChannels[index]
                     currentChannels[index] =
                             channel.copy(unreadCount = channel.unreadCount + 1, hasUnread = true)
                 }
-                currentConnections + (serverId to connection.copy(channels = currentChannels))
             }
-            updateServerList()
+
+            val updatedConnection =
+                    connection.copy(messages = updatedMessages, channels = currentChannels)
+
+            currentConnections + (serverId to updatedConnection)
         }
+
+        updateServerList()
 
         // Note: We might be doing double updates to _connections here.
         // Ideally we'd merge them but readability first.
@@ -1838,7 +1882,10 @@ class DesktopConnectionManager {
         _connections.update { currentConnections ->
             val connection = currentConnections[serverId] ?: return@update currentConnections
             val currentChannels = connection.channels.toMutableList()
-            val index = currentChannels.indexOfFirst { it.name == channelName }
+            val index =
+                    currentChannels.indexOfFirst { it.name.equals(channelName, ignoreCase = true) }
+            // If strictly not found, try lax comparison or trim
+            // But usually just ignoreCase matches what IRC logic expects
 
             if (index != -1) {
                 val channel = currentChannels[index]
@@ -1927,7 +1974,8 @@ data class ServerConnection(
         val messages: Map<String, List<IncomingMessage>> = emptyMap(),
         val currentChannel: String? = null,
         val manuallyDisconnected: Boolean = false,
-        val reconnectAttempt: Int = 0
+        val reconnectAttempt: Int = 0,
+        val historyLoadedChannels: Set<String> = emptySet()
 ) {
     fun isConnected(): Boolean {
         return connectionState is ConnectionState.Connected

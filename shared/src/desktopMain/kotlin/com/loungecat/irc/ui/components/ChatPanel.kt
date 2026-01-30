@@ -144,7 +144,9 @@ fun ChatPanel(
 
     // Text selection support
     val clipboardManager = LocalClipboardManager.current
-    val listState = rememberLazyListState()
+
+    // Key the list state to the channel so we don't reuse state across channels
+    val listState = key(serverId, channelName) { rememberLazyListState() }
     val selectionController = remember(listState) { SelectionController(listState) }
 
     // Update selection controller with current messages
@@ -288,64 +290,91 @@ fun ChatPanel(
             val isLoadingOlder by connectionManager.isLoadingOlderMessages.collectAsState()
 
             // Auto-scroll logic
+            // Initialize to true so we start at bottom when switching channels
+            var isAtBottom by remember(channelName) { mutableStateOf(true) }
             var hasInitialScrolled by remember(channelName) { mutableStateOf(false) }
 
+            // Track scroll position to update isAtBottom
+            LaunchedEffect(listState) {
+                snapshotFlow {
+                    val layoutInfo = listState.layoutInfo
+                    val totalItemsCount = layoutInfo.totalItemsCount
+                    val viewportHeight = layoutInfo.viewportSize.height
+
+                    // If viewport is 0 (minimized) or total items is 0, we can't determine reliable
+                    // status
+                    // Return null to indicate "no update" or handling it downstream
+                    if (viewportHeight <= 0 || totalItemsCount == 0) {
+                        null
+                    } else {
+                        val lastVisibleItemIndex =
+                                layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                        // Consider it "at bottom" if within 1 item of the end
+                        lastVisibleItemIndex >= totalItemsCount - 2
+                    }
+                }
+                        .collect {
+                            if (it != null) {
+                                isAtBottom = it
+                            }
+                        }
+            }
+
             // Mark as read when active
-            LaunchedEffect(markAsRead, channelMessages.size) {
-                if (markAsRead) {
+            LaunchedEffect(markAsRead, channelMessages.size, isAtBottom) {
+                if (markAsRead && isAtBottom) {
                     connectionManager.markAsRead(serverId, channelName)
                 }
             }
 
+            // Auto-scroll on new messages
             LaunchedEffect(channelMessages.size, channelName) {
                 if (channelMessages.isNotEmpty()) {
                     if (!hasInitialScrolled) {
                         try {
-                            delay(50) // Wait for layout to settle, critical for Windows
                             listState.scrollToItem(channelMessages.size - 1)
                             hasInitialScrolled = true
                         } catch (e: Exception) {
-                            // Ignore cancellation
+                            Logger.e("ChatPanel", "Initial scroll error", e)
                         }
-                    } else if (!isLoadingOlder) {
+                    } else {
                         val lastItem = channelMessages.last()
-
                         val isSelf =
                                 when (lastItem) {
                                     is ChatUiItem.SingleMessage -> lastItem.message.isSelf
                                     is ChatUiItem.GroupedEvents -> lastItem.events.any { it.isSelf }
                                 }
 
-                        // Check if we are currently at the bottom (or close to it)
-                        val layoutInfo = listState.layoutInfo
-                        val totalItemsCount = layoutInfo.totalItemsCount
-                        val lastVisibleItemIndex =
-                                layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-
-                        // If the user was viewing the previous last item, they are "at bottom"
-                        // Allow a margin of error (e.g. 3 items for better tolerance)
-                        val isAtBottom =
-                                lastVisibleItemIndex >= totalItemsCount - 3 || totalItemsCount <= 1
-
                         if (isAtBottom || isSelf) {
                             try {
-                                listState.animateScrollToItem(channelMessages.size - 1)
-                            } catch (e: Exception) {
+                                // Give a tiny frame for layout to update new item count
+                                // (Sometimes needed for new item to be recognized by lazy list)
+                                // But usually scrollToItem handles it if index is within new bounds
+                                // We scroll to max possible index based on our known list size
                                 listState.scrollToItem(channelMessages.size - 1)
+                            } catch (e: Exception) {
+                                Logger.e("ChatPanel", "Auto-scroll error", e)
                             }
                         }
                     }
                 }
             }
 
-            // Detect scroll to top for persistent scrollback
+            // Scrollback loading logic - ensure we maintain position
+            // We use a different effect to handle "scrolled to top"
             LaunchedEffect(listState) {
                 snapshotFlow { listState.firstVisibleItemIndex }.collect { firstVisibleIndex ->
                     if (firstVisibleIndex == 0 && channelMessages.isNotEmpty() && !isLoadingOlder) {
+                        // Capture first visible item to restore position relative to it
+                        val firstVisibleItem = listState.layoutInfo.visibleItemsInfo.firstOrNull()
+                        val firstVisibleOffset = firstVisibleItem?.offset ?: 0
+
                         val loadedCount = connectionManager.loadOlderMessages(serverId, channelName)
-                        // Adjust scroll position to maintain view
+
                         if (loadedCount > 0) {
-                            listState.scrollToItem(loadedCount)
+                            // Scroll to the previous top item (which is now at index loadedCount)
+                            // plus the original offset to keep it seamless
+                            listState.scrollToItem(loadedCount, firstVisibleOffset)
                         }
                     }
                 }
@@ -832,7 +861,10 @@ fun ChatPanel(
 
                 Button(
                         onClick = {
-                            com.loungecat.irc.util.Logger.d("ChatPanel", "Image upload clicked for: $channelName")
+                            com.loungecat.irc.util.Logger.d(
+                                    "ChatPanel",
+                                    "Image upload clicked for: $channelName"
+                            )
                             showFilePicker = true
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
