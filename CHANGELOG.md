@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Restore the original Kotlin desktop cat artwork in the native window, sidebar,
+  desktop/package icon and subtle chat watermark.
+- Refresh the README gallery to show the restored branding.
+
 ## 2.0.0 — native successor
 
 - Replace the Kotlin/Compose desktop implementation with C++20 and Qt 6 Widgets.

@@ -1,11 +1,20 @@
 #include "ui/theme/IconFactory.h"
 #include <QPainter>
 #include <QPixmap>
+#include <QImage>
 #include <QSvgRenderer>
 #include <QIconEngine>
 #include <QFile>
 
 namespace loungecat {
+
+QPixmap IconFactory::brandLogo(bool darkBackground) {
+    QImage image(QStringLiteral(":/icons/logo_transparent.png"));
+    // Preserve the original cat and its alpha; only reverse its monochrome
+    // colours where the black artwork would disappear into a dark background.
+    if (darkBackground && !image.isNull()) image.invertPixels(QImage::InvertRgb);
+    return QPixmap::fromImage(image);
+}
 
 namespace {
 

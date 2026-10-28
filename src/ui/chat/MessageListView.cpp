@@ -5,6 +5,7 @@
 #include "util/IrcFormatParser.h"
 #include "service/LinkPreviewService.h"
 #include "service/ImageCache.h"
+#include "ui/theme/IconFactory.h"
 #include <QScrollBar>
 #include <QMouseEvent>
 #include <QContextMenuEvent>
@@ -13,12 +14,14 @@
 #include <QApplication>
 #include <QPointer>
 #include <QTimer>
+#include <QPainter>
 #include <algorithm>
 
 namespace loungecat {
 
 MessageListView::MessageListView(MessageListModel* model, MessageItemDelegate* delegate, QWidget* parent)
     : QListView(parent), m_model(model), m_delegate(delegate) {
+    m_brandLogo = IconFactory::brandLogo(m_theme.isDark);
     setModel(m_model);
     setItemDelegate(m_delegate);
     setSelectionMode(QAbstractItemView::ExtendedSelection);
@@ -38,6 +41,8 @@ MessageListView::MessageListView(MessageListModel* model, MessageItemDelegate* d
     });
 
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this]() {
+        // The watermark is fixed to the viewport, not the scrolled message rows.
+        viewport()->update();
         Q_EMIT scrolledStateChanged(isScrolledToBottom());
     });
 
@@ -69,6 +74,7 @@ void MessageListView::setPreferencesAndTheme(const UserPreferences& prefs, const
     if (m_prefs == prefs && m_theme == theme) return;
     m_prefs = prefs;
     m_theme = theme;
+    m_brandLogo = IconFactory::brandLogo(theme.isDark);
     m_delegate->setThemeAndPreferences(theme, prefs);
     scheduleDelayedItemsLayout();
     viewport()->update();
@@ -77,6 +83,26 @@ void MessageListView::setPreferencesAndTheme(const UserPreferences& prefs, const
 bool MessageListView::isScrolledToBottom() const {
     const QScrollBar* sb = verticalScrollBar();
     return sb->value() >= sb->maximum() - 16;
+}
+
+void MessageListView::paintEvent(QPaintEvent* event) {
+    {
+        QPainter painter(viewport());
+        painter.fillRect(viewport()->rect(), m_theme.chatBackground);
+        if (!m_brandLogo.isNull()) {
+            // Match the Kotlin client's subtle, centred chat watermark. Paint
+            // before the message delegate so text and selections stay above it.
+            QSizeF size(m_brandLogo.size());
+            size.scale(QSizeF(viewport()->size()) * 0.6, Qt::KeepAspectRatio);
+            const QRectF target((viewport()->width() - size.width()) / 2.0,
+                                (viewport()->height() - size.height()) / 2.0,
+                                size.width(), size.height());
+            painter.setRenderHint(QPainter::SmoothPixmapTransform);
+            painter.setOpacity(0.15);
+            painter.drawPixmap(target, m_brandLogo, QRectF(m_brandLogo.rect()));
+        }
+    }
+    QListView::paintEvent(event);
 }
 
 void MessageListView::mousePressEvent(QMouseEvent* event) {

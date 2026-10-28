@@ -3,7 +3,8 @@
 **A native Linux IRC client, with room for every conversation.**
 
 Connect to multiple networks, keep channels side by side, and make the workspace yours
-with seven built-in themes. Built with **C++20 and Qt 6 Widgets**.
+with seven built-in themes and the original LoungeCat cat branding. Built with
+**C++20 and Qt 6 Widgets**.
 
 [Build & run](BUILD.md) · [Screenshots](#screenshots) · [Moving from v1](docs/MIGRATION-v2.md) · [Release notes](CHANGELOG.md)
 
@@ -22,7 +23,7 @@ with seven built-in themes. Built with **C++20 and Qt 6 Widgets**.
 
 ## Build & run
 
-**Linux binary builds:** version tags that pass every CI gate are published to [GitHub Releases](https://github.com/binkiewka/LoungeCat-Desktop/releases). Successful [Linux CI runs](https://github.com/binkiewka/LoungeCat-Desktop/actions/workflows/ci.yml?query=branch%3Av2.0-native) provide x86_64 **AppImage + `.deb`**, matching source and checksums in the `loungecat-linux-x86_64` artifact (14-day retention; GitHub login may be required). Linux is the validated target; Windows/macOS and complete v1 feature/profile parity are not certified.
+**Linux binary builds:** version tags that pass every CI gate are published to [GitHub Releases](https://github.com/binkiewka/LoungeCat-Desktop/releases). Successful [Linux CI runs](https://github.com/binkiewka/LoungeCat-Desktop/actions/workflows/ci.yml?query=branch%3Amaster) provide x86_64 **AppImage + `.deb`**, matching source and checksums in the `loungecat-linux-x86_64` artifact (14-day retention; GitHub login may be required). Linux is the validated target; Windows/macOS and complete v1 feature/profile parity are not certified.
 
 With a C++20 compiler, CMake 3.24+ and Qt 6.4+ development packages installed:
 

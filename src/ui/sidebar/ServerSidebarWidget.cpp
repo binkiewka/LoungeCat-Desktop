@@ -35,10 +35,6 @@ ServerSidebarWidget::ServerSidebarWidget(QWidget* parent)
     headerLayout->setSpacing(8);
 
     m_logoLabel = new QLabel(m_headerWidget);
-    QPixmap logoPx(QStringLiteral(":/icons/icon.png"));
-    if (!logoPx.isNull()) {
-        m_logoLabel->setPixmap(logoPx.scaled(28, 28, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-    }
     headerLayout->addWidget(m_logoLabel);
 
     m_titleLabel = new QLabel(QStringLiteral("<span style=\"font-size:12pt; font-weight:700;\">LoungeCat</span>"), m_headerWidget);
@@ -139,6 +135,14 @@ ServerSidebarWidget::ServerSidebarWidget(QWidget* parent)
 void ServerSidebarWidget::refreshToolbarIcons() {
     const QColor fg = m_theme.foreground;
     const QColor accent = m_theme.accentColor;
+    const qreal dpr = devicePixelRatioF();
+    QPixmap logo = IconFactory::brandLogo(m_theme.isDark);
+    if (!logo.isNull()) {
+        logo = logo.scaled(QSize(qRound(28 * dpr), qRound(28 * dpr)),
+                           Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        logo.setDevicePixelRatio(dpr);
+    }
+    m_logoLabel->setPixmap(logo);
 
     m_collapseBtn->setIcon(IconFactory::create(
         m_collapsed ? IconType::ChevronRight : IconType::ChevronLeft, fg, 20

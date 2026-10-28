@@ -453,8 +453,6 @@ void MessageItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& o
     } else if (isHighlight) {
         painter->fillRect(option.rect, m_theme.highlightBackground);
         painter->fillRect(QRect(option.rect.left(), option.rect.top(), 3, option.rect.height()), m_theme.unreadBadge);
-    } else {
-        painter->fillRect(option.rect, m_theme.chatBackground);
     }
 
     auto* document = documentFor(index, std::max(100, option.rect.width() - 12), option.font);

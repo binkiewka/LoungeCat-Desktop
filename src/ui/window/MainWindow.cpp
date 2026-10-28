@@ -38,7 +38,7 @@ MainWindow::MainWindow(
       m_updateCheckService(updateCheckService),
       m_connectionManager(connectionManager) {
     setWindowTitle(QStringLiteral("LoungeCat IRC Client"));
-    setWindowIcon(QIcon(QStringLiteral(":/icons/icon.png")));
+    setWindowIcon(QIcon(QStringLiteral(":/icons/logo_transparent.png")));
     setMinimumSize(800, 600);
     resize(1200, 800);
 

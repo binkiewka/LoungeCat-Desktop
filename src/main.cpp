@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
         QTextStream(stdout) << app.applicationName() << ' ' << app.applicationVersion() << '\n';
         return 0;
     }
-    app.setWindowIcon(QIcon(QStringLiteral(":/icons/icon.png")));
+    app.setWindowIcon(QIcon(QStringLiteral(":/icons/logo_transparent.png")));
 
     const loungecat::AppConfig appCfg = loungecat::AppConfig::fromEnvironment();
 

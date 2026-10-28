@@ -29,6 +29,7 @@ enum class IconType {
 
 class IconFactory {
 public:
+    static QPixmap brandLogo(bool darkBackground);
     static QIcon create(IconType type, const QColor& color, int size = 18);
     static QIcon createStatusDot(const QColor& color, bool hollow = false, int size = 14);
 };

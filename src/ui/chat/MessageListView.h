@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QListView>
+#include <QPixmap>
 #include "data/model/IncomingMessage.h"
 #include "data/model/UserPreferences.h"
 #include "ui/theme/Theme.h"
@@ -27,6 +28,7 @@ Q_SIGNALS:
     void senderClicked(const QString& nickname);
 
 protected:
+    void paintEvent(QPaintEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
@@ -45,6 +47,7 @@ private:
     ThemeColors m_theme = ThemeColors::darkTheme();
     QPoint m_pressPos;
     bool m_documentPrunePending = false;
+    QPixmap m_brandLogo;
 };
 
 } // namespace loungecat
