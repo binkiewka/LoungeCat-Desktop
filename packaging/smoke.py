@@ -2,6 +2,7 @@
 """Installed-package GUI, plugin and verified-TLS smoke in a disposable container."""
 from pathlib import Path
 import argparse
+import ctypes
 import hashlib
 import json
 import os
@@ -31,6 +32,32 @@ def run(argv,**kwargs):
     except subprocess.CalledProcessError as error:
         (output/'subprocess-failure.log').write_text(str(argv)+'\n'+error.stdout+'\n'+error.stderr)
         raise
+
+def close_window(window_id, display_name):
+    # xdotool windowclose uses XDestroyWindow, which is NOT a user's normal
+    # close request and can strand a modal Qt dialog. Send WM_DELETE_WINDOW.
+    class Data(ctypes.Union):
+        _fields_=[('l',ctypes.c_long*5),('b',ctypes.c_char*20)]
+    class Client(ctypes.Structure):
+        _fields_=[('type',ctypes.c_int),('serial',ctypes.c_ulong),('send_event',ctypes.c_int),
+            ('display',ctypes.c_void_p),('window',ctypes.c_ulong),('message_type',ctypes.c_ulong),
+            ('format',ctypes.c_int),('data',Data)]
+    class Event(ctypes.Union):
+        _fields_=[('client',Client),('pad',ctypes.c_long*24)]
+    x=ctypes.CDLL('libX11.so.6')
+    x.XOpenDisplay.argtypes=[ctypes.c_char_p];x.XOpenDisplay.restype=ctypes.c_void_p
+    x.XInternAtom.argtypes=[ctypes.c_void_p,ctypes.c_char_p,ctypes.c_int];x.XInternAtom.restype=ctypes.c_ulong
+    x.XSendEvent.argtypes=[ctypes.c_void_p,ctypes.c_ulong,ctypes.c_int,ctypes.c_long,ctypes.POINTER(Event)]
+    x.XFlush.argtypes=[ctypes.c_void_p];x.XCloseDisplay.argtypes=[ctypes.c_void_p]
+    display=x.XOpenDisplay(display_name.encode());assert display
+    try:
+        event=Event();event.client.type=33;event.client.send_event=1
+        event.client.display=display;event.client.window=int(window_id)
+        event.client.message_type=x.XInternAtom(display,b'WM_PROTOCOLS',0)
+        event.client.format=32;event.client.data.l[0]=x.XInternAtom(display,b'WM_DELETE_WINDOW',0)
+        assert x.XSendEvent(display,int(window_id),0,0,ctypes.byref(event))
+        x.XFlush(display)
+    finally:x.XCloseDisplay(display)
 
 # Test setup runs as root only inside an ephemeral container. No host install.
 assert not Path('/usr/lib/x86_64-linux-gnu/libQt6Core.so.6').exists(), 'Runtime container already has Qt; bundle proof would be masked'
@@ -129,16 +156,17 @@ with tempfile.TemporaryDirectory(prefix='loungecat-package-') as tmp:
         assert 'WIDTH=1200' in geometry and 'HEIGHT=800' in geometry,geometry
         run(['xdotool','mousemove','--window',main,'156','72','click','1'],env=env)
         settings=window('LoungeCat Settings')
-        run(['xdotool','windowclose',settings],env=env)
+        close_window(settings,env['DISPLAY'])
         time.sleep(0.3)
-        run(['xdotool','windowclose',main],env=env)
+        close_window(main,env['DISPLAY'])
         assert app.wait(timeout=15)==0,'Application did not shut down cleanly'
         log.close()
         with sqlite3.connect(profile/'loungecat.db') as db:
             columns={row[1] for row in db.execute('PRAGMA table_info(server_configs)')}
             assert {'hostname','channel_keys'}<=columns
         assert (profile/'loungecat.db').stat().st_mode & 0o777 == 0o600
-        assert json.loads((profile/'preferences.json').read_text())['theme']=='Obsidian Veil'
+        # Saving in Settings proves a real durable preferences round trip.
+        assert json.loads((profile/'preferences.json').read_text())['notificationsEnabled'] is False
     finally:
         if app is not None and app.poll() is None:app.terminate();app.wait(timeout=10)
         xvfb.terminate();xvfb.wait(timeout=10);xlog.close()

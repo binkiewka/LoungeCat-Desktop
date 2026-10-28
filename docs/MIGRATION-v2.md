@@ -38,5 +38,5 @@ published releases are not rewritten. Dependency licenses remain separate.
 
 The migration branch and review PR are source preparation, not a release or a
 default-branch replacement. Native source checks replace the Kotlin release
-workflow on this branch. Installer packaging, final release validation and the
-`v2.0.0` release/tag are separate steps.
+workflow on this branch. CI now produces and smoke-tests preview AppImage/deb packages without creating a
+release. Final release validation and the `v2.0.0` release/tag are separate steps.

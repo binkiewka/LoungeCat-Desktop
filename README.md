@@ -22,9 +22,7 @@ with seven built-in themes. Built with **C++20 and Qt 6 Widgets**.
 
 ## Build & run
 
-**v2 is a source preview, not a published binary release.** There is no v2 installer
-or release tag yet. Linux is the validated target; Windows/macOS and complete v1
-feature/profile parity are not certified.
+**Linux binary builds:** version tags that pass every CI gate are published to [GitHub Releases](https://github.com/binkiewka/LoungeCat-Desktop/releases). Successful [Linux CI runs](https://github.com/binkiewka/LoungeCat-Desktop/actions/workflows/ci.yml?query=branch%3Av2.0-native) provide x86_64 **AppImage + `.deb`**, matching source and checksums in the `loungecat-linux-x86_64` artifact (14-day retention; GitHub login may be required). Linux is the validated target; Windows/macOS and complete v1 feature/profile parity are not certified.
 
 With a C++20 compiler, CMake 3.24+ and Qt 6.4+ development packages installed:
 
@@ -39,10 +37,7 @@ path. Leave `LOUNGECAT_DB_PATH` and `LOUNGECAT_CONFIG` unset. See [BUILD.md](BUI
 for Debian/Ubuntu dependencies, test commands and runtime requirements, and read the
 [migration/rollback notes](docs/MIGRATION-v2.md) before reusing existing data.
 
-**Packaging direction:** AppImage and `.deb` are the recommended first Linux downloads;
-Flatpak and distro-specific `.rpm` packages can follow. These packages do not exist
-for v2 yet. See [platforms and packaging](docs/PACKAGING.md) for distro/architecture
-coverage and the separate Windows build requirement.
+**Package baseline:** Debian 12 / glibc 2.36, x86_64. CI installs/runs both formats in clean Debian 12 and Ubuntu 24.04 containers, including a virtual X11 window, Settings, SQLite, verified TLS and shutdown checks. This is not certification of every distro/compositor. Flatpak, `.rpm`, Windows and ARM64 are not built yet. See [package/download instructions](docs/PACKAGING.md).
 
 ## Screenshots
 

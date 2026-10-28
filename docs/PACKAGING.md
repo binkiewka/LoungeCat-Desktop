@@ -1,42 +1,104 @@
-# Platforms and prebuilt packages
+# Linux packages and automatic releases
 
-The native v2 application currently builds as a dynamically linked Linux executable.
-No v2 AppImage, deb, rpm, Flatpak, Windows installer or macOS bundle has been
-published. These are packaging options and recommendations, not available downloads.
+CI builds **x86_64 AppImage and `.deb`** on Debian 12 (glibc 2.36, Qt 6.4).
+Each format is downloaded into clean Debian 12 and Ubuntu 24.04 runtime containers
+and checked before release. The runtime images start without Qt installed, so
+AppImage's bundled libraries cannot be masked by build-machine dependencies.
 
-## Recommended first release
+## Download and run
 
-Start with **Linux x86_64 AppImage and `.deb`**. Add other package families and
-architectures after their build and runtime checks are in place.
+Tagged, successfully tested versions are uploaded automatically to
+[GitHub Releases](https://github.com/binkiewka/LoungeCat-Desktop/releases).
+Branch/PR builds are available from the successful
+[CI run](https://github.com/binkiewka/LoungeCat-Desktop/actions/workflows/ci.yml)
+as `loungecat-linux-x86_64` (14-day retention; GitHub login may be required).
 
-| Format | Intended audience | What still needs doing |
-| --- | --- | --- |
-| **AppImage** | Many desktop Linux distributions of the same CPU architecture | Bundle Qt/plugins and runtime dependencies; choose and test a minimum glibc baseline and desktop integration. An AppImage is not automatically universal across old/new Linux systems. |
-| **`.deb`** | Selected Debian, Ubuntu and Linux Mint releases | Native package metadata, dependency versions, desktop entry/icon, install/remove checks and a tested distro baseline. One deb is not guaranteed to fit every Debian-derived release. |
-| **Flatpak** | Most desktop distributions with Flatpak support | Manifest, suitable KDE/Qt runtime, sandbox permissions and checks for networking, file access, tray/notifications and desktop portals. Flathub publication is a separate step. |
-| **`.rpm`** | Selected Fedora and openSUSE releases | RPM spec and separate distro/dependency validation. These distributions need not use identical package names or runtime versions. |
-| **`.tar.gz`** | Users who can supply compatible system Qt/runtime libraries | A clear runtime-dependency list, launch instructions, icons and checksums. This is a bundle, not an installer or a self-contained portable build. |
+Every build includes the matching source tarball, `SHA256SUMS`, version/commit
+manifest and build dependency inventory. Verify the downloaded assets:
 
-Arch users could additionally be served by a maintained `PKGBUILD`/AUR package;
-that is a distro recipe, not proof of a tested standalone binary. Native source
-builds remain an option wherever the required compiler, CMake and Qt versions exist.
+```sh
+sha256sum --check SHA256SUMS
+chmod +x LoungeCat-2.0.0-x86_64.AppImage
+LOUNGECAT_DATA_DIR="$HOME/.loungecat-v2-preview" ./LoungeCat-2.0.0-x86_64.AppImage
+```
 
-## Architectures
+If FUSE is unavailable, use `APPIMAGE_EXTRACT_AND_RUN=1` with the same command.
+The desktop/display stack and working graphics drivers still come from the host.
+For a Debian/Ubuntu package, install using apt so dependencies are resolved:
 
-Current binary build evidence is **Linux x86_64**. Linux ARM64/aarch64 is a possible
-additional target, but requires a separate build, dependency bundle and runtime
-validation. A single x86_64 AppImage/deb does not run natively on ARM64.
+```sh
+sudo apt install ./loungecat_2.0.0_amd64.deb
+LOUNGECAT_DATA_DIR="$HOME/.loungecat-v2-preview" loungecat
+```
 
-## Windows and macOS
+Use the version in the downloaded filenames. Leave `LOUNGECAT_DB_PATH` and
+`LOUNGECAT_CONFIG` unset for the separate preview profile. Read
+[migration/rollback notes](MIGRATION-v2.md) before opening old Kotlin data.
 
-- **Windows:** a portable executable/zip, setup `.exe` or `.msi` is possible in
-  principle with Qt. A Windows toolchain, dependency deployment, platform fixes
-  if needed, and real Windows runtime testing are required. It is not produced
-  by renaming or packaging the Linux executable. Windows v2 is not validated.
-- **macOS:** an `.app`/`.dmg` would likewise need a separate macOS build, deployment,
-  signing/notarization decisions and runtime testing. It is not currently a
-  validated or prepared v2 target.
+## What CI verifies
 
-Before shipping any binary, retain the application/dependency licenses and provide
-the matching native source and build information. Packaging should use the native
-CMake build; the archived Kotlin v1 packaging scripts do not build the v2 app.
+- Release build, desktop entry/icon and license payload, checksums and matching source.
+- `.deb` install on both clean distros using only declared runtime dependencies;
+  removal must remove the executable while retaining user profile data.
+- Actual AppImage extraction/run without privileged FUSE. Required SQLite, xcb,
+  offscreen and OpenSSL backend plugins and OpenSSL libraries must be bundled.
+- A separate test-only Qt probe (not installed in either package): SQLite round trip,
+  certificate-verified loopback TLS, SVG rendering and actual widget rendering.
+  AppImage probe mappings must prove Qt/SQLite/OpenSSL loaded from the bundle.
+- The **actual packaged application** on a private Xvfb/X11 display: visible main
+  window, Settings open/close, normal shutdown and durable owner-only database.
+- Existing native normal/ASan regression jobs remain required for tag publication.
+
+This is targeted package/runtime coverage, not every feature, desktop compositor,
+physical audio device, graphics driver or Linux distribution. Native Wayland is
+not bundled/tested; Wayland desktops need XWayland. The current targets are x86_64;
+ARM64 needs separate builds and runtime validation.
+
+## Automatic publication
+
+Push a stable tag matching the CMake version, for example `v2.0.0`. CI builds and
+checks both package formats on both distributions. The release job depends on
+**all** native, build and package-smoke jobs succeeding; a failure blocks upload.
+Before publication it verifies tag/version, exact source commit and every checksum.
+Assets are uploaded to a draft first; only a completed upload is published. An
+already published release is never overwritten by a rerun. No Android files are
+built or uploaded. Branch/PR pushes never publish releases.
+
+The pipeline uses only its narrowly scoped release-job `GITHUB_TOKEN`; no new
+personal token or external publication service is needed. Deployment tools are
+locked to GitHub asset IDs and SHA-256 hashes in `packaging/tools.lock.json`.
+
+## Reproduce package tests locally
+
+After [building packages](../BUILD.md), test each distribution/format combination
+inside disposable containers, not by installing on the development host:
+
+```sh
+docker build --build-arg BASE=debian:12-slim -t loungecat-runtime -f packaging/Dockerfile.runtime .
+mkdir -p build/package-results
+docker run --rm -v "$PWD/dist:/packages" -v "$PWD/build/package-results:/results" \
+  loungecat-runtime python3 /packages/test-support/smoke.py \
+  --format appimage --dist /packages --output /results
+```
+
+Repeat with `--format deb` in a fresh container. Build the runtime image with
+`BASE=ubuntu:24.04` for the second distro. Logs and JSON receipts are uploaded as
+CI evidence. CI's `test-support` files are validation tools/public synthetic TLS
+fixtures; they are not shipped inside the installed application.
+
+## Other formats/platforms
+
+| Target | Status |
+| --- | --- |
+| Debian 12 / Ubuntu 24.04 x86_64 | AppImage and deb build + clean-runtime CI coverage |
+| Linux Mint 22.x | Ubuntu-derived target; no claim of a separate clean-Mint package matrix |
+| Fedora/openSUSE | AppImage may work with the required runtime baseline; not yet tested. `.rpm` needs its own build/dependency checks. |
+| Flatpak / Arch AUR | Separate manifests/recipes and desktop-integration testing needed |
+| ARM64 | Separate dependency bundles, build and runtime tests needed |
+| Windows `.exe`/`.msi` | Separate Qt/Windows build, deployment and testing; not validated |
+| macOS `.app`/`.dmg` | Separate macOS build, deployment, signing/notarization choices and tests; not validated |
+
+The AppImage is dynamically linked to the host's glibc/display stack; it is not
+universal across arbitrary old Linux systems or CPU architectures. The deb uses
+system Qt instead of vendoring it; it is not guaranteed to install on all Debian
+family releases. Keep bundled dependency notices and the matching GPL source.

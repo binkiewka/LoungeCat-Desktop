@@ -2,8 +2,10 @@
 
 - Linux is the validated target. Windows/macOS, every Linux distribution and
   compositor, and full Kotlin feature parity are not certified.
-- The current delivery is source and a buildable dynamically linked Qt executable;
-  no AppImage, Flatpak or Debian package is included.
+- CI produces preview AppImage and Debian packages for Linux x86_64, with matching
+  source/checksums. Branch artifacts are previews; tested version tags publish to
+  GitHub Releases. Flatpak/rpm and other
+  architectures are not built. See [packaging](PACKAGING.md) for the tested baseline.
 - Full Kotlin-profile upgrade/downgrade compatibility is not certified. Use a
   separate preview profile and keep private backups; see [migration](MIGRATION-v2.md).
 - Existing native regression evidence covers 221 distinct checks in each of
