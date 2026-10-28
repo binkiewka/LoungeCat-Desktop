@@ -195,3 +195,31 @@ target_link_libraries(loungecat PRIVATE loungecat_ui)
 if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    include(GNUInstallDirs)
+    install(TARGETS loungecat RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES packaging/io.github.binkiewka.LoungeCat.desktop
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES resources/icons/icon.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps
+        RENAME loungecat.png)
+    install(FILES LICENSE COPYRIGHT THIRD_PARTY_NOTICES.md
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/loungecat)
+    install(FILES third_party/licenses/LoungeCat-Kotlin-MIT.txt
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/loungecat/licenses)
+
+    set(CPACK_GENERATOR DEB)
+    set(CPACK_PACKAGE_NAME loungecat)
+    set(CPACK_PACKAGE_VENDOR "LoungeCat contributors")
+    set(CPACK_PACKAGE_CONTACT "https://github.com/binkiewka/LoungeCat-Desktop/issues")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Native Qt desktop IRC client")
+    set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+    set(CPACK_PACKAGING_INSTALL_PREFIX /usr)
+    set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+    set(CPACK_DEBIAN_PACKAGE_SECTION net)
+    set(CPACK_DEBIAN_PACKAGE_PRIORITY optional)
+    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+    # Plugins/backends loaded at runtime are not found by ELF shlibdeps.
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqt6sql6-sqlite, qt6-qpa-plugins, libssl3, ca-certificates")
+    include(CPack)
+endif()

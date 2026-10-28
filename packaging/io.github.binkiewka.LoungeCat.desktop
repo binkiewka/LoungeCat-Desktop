@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=LoungeCat
+GenericName=IRC Client
+Comment=Native multi-network IRC client
+Exec=loungecat
+Icon=loungecat
+Terminal=false
+Categories=Network;IRCClient;
+StartupWMClass=LoungeCat
+Keywords=IRC;Chat;Internet;

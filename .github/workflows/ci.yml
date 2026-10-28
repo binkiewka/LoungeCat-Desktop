@@ -1,7 +1,8 @@
-name: Native source checks
+name: Native checks and Linux packages
 on:
   push:
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -24,3 +25,57 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=1
         run: ctest --test-dir build/ci --output-on-failure
+
+  packages:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Build Debian 12 packaging environment
+        run: docker build -t loungecat-builder -f packaging/Dockerfile.build .
+      - name: Build Release, deb, AppImage and matching source archive
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" loungecat-builder bash packaging/build.sh
+      - name: Upload packages, matching source, checksums and test support
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: loungecat-linux-x86_64
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  package-smoke:
+    needs: packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: ['debian:12-slim', 'ubuntu:24.04']
+        format: [appimage, deb]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: loungecat-linux-x86_64
+          path: dist/
+      - name: Build clean runtime environment without Qt installed
+        env:
+          DISTRO: ${{ matrix.distro }}
+        run: docker build --build-arg "BASE=$DISTRO" -t loungecat-runtime -f packaging/Dockerfile.runtime .
+      - name: Test the actual package, plugins, verified TLS, GUI and shutdown
+        env:
+          FORMAT: ${{ matrix.format }}
+        run: |
+          mkdir -p package-results
+          docker run --rm -v "$PWD/dist:/packages" -v "$PWD/package-results:/results" \
+            loungecat-runtime python3 /packages/test-support/smoke.py \
+            --format "$FORMAT" --dist /packages --output /results
+      - name: Upload package test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: package-smoke-${{ strategy.job-index }}
+          path: package-results/
+          if-no-files-found: warn
+          retention-days: 14
