@@ -140,7 +140,8 @@ with tempfile.TemporaryDirectory(prefix='loungecat-package-') as tmp:
             env['DISPLAY']=':'+display.readline().strip()
         env['QT_QPA_PLATFORM']='xcb'
         profile=root/'profile';profile.mkdir(mode=0o700)
-        (profile/'preferences.json').write_text(json.dumps({'notificationsEnabled':False,'soundAlertsEnabled':False,'spellCheckEnabled':False}))
+        # No saved networks and no session bus: a real first launch must create
+        # its default preferences/database, without notifications or chat data.
         log=(output/'application.log').open('w')
         app=subprocess.Popen(command,env=env,stdout=log,stderr=log)
         def window(title):
@@ -165,8 +166,7 @@ with tempfile.TemporaryDirectory(prefix='loungecat-package-') as tmp:
             columns={row[1] for row in db.execute('PRAGMA table_info(server_configs)')}
             assert {'hostname','channel_keys'}<=columns
         assert (profile/'loungecat.db').stat().st_mode & 0o777 == 0o600
-        # Saving in Settings proves a real durable preferences round trip.
-        assert json.loads((profile/'preferences.json').read_text())['notificationsEnabled'] is False
+        assert json.loads((profile/'preferences.json').read_text())['theme']=='Obsidian Veil'
     finally:
         if app is not None and app.poll() is None:app.terminate();app.wait(timeout=10)
         xvfb.terminate();xvfb.wait(timeout=10);xlog.close()
