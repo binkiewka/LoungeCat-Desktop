@@ -5,56 +5,56 @@
       "file": "theme-obsidian-veil.png",
       "height": 900,
       "width": 1440,
-      "sha256": "fc856d3790acf9b9b6a3185ac98170ba9f6eb09cf040db11a9e1a1af29c3119d",
-      "bytes": 186743
+      "sha256": "c6a6049452abf9bf66a72eb40df51a2d77071686ecdde79f4a45156b17138c74",
+      "bytes": 215073
     },
     {
       "description": "Built-in theme: Dark",
       "file": "theme-dark.png",
       "height": 900,
       "width": 1440,
-      "sha256": "e24a0afdc102af76a8fd79f020ae2fba37b2ced393ea95c992361bf8b4ce44fa",
-      "bytes": 189272
+      "sha256": "c2d76c87d99a0176b2afe5df91eb7f617bd5608f960a6cc55deb31d718731216",
+      "bytes": 219333
     },
     {
       "description": "Built-in theme: Light",
       "file": "theme-light.png",
       "height": 900,
       "width": 1440,
-      "sha256": "77932a76c0f70a1c0f03356b5f24cd7954fec4f891255cd2a94fee19ffda61ed",
-      "bytes": 185494
+      "sha256": "efbf5f66ac4ddd61d920eed26fd1f0941bb33cd9bfff01ff65876f58151383f4",
+      "bytes": 212221
     },
     {
       "description": "Built-in theme: High Voltage",
       "file": "theme-high-voltage.png",
       "height": 900,
       "width": 1440,
-      "sha256": "ef249552fdcad067966a85adcfe6b64819c6fcf60f30e9f228729849ce8601f2",
-      "bytes": 188430
+      "sha256": "8404d644f903246bd6f8bc0512d7b4ee48e39ed40fa70697240d916230a5961e",
+      "bytes": 219053
     },
     {
       "description": "Built-in theme: Neon Night",
       "file": "theme-neon-night.png",
       "height": 900,
       "width": 1440,
-      "sha256": "98001667915ef25151997cd4b54da1d7e89c7ea577ce8300b8605b4a872c7c86",
-      "bytes": 188798
+      "sha256": "a8bc4f4dbe43710f81c26ae495e8bdd92d3ee753928641e70f0830ead133959d",
+      "bytes": 219573
     },
     {
       "description": "Built-in theme: Retro Warmth",
       "file": "theme-retro-warmth.png",
       "height": 900,
       "width": 1440,
-      "sha256": "59d742442f63b6fee489f16525399f8bdafe703f770d0d6434be1ac1b6b12e8d",
-      "bytes": 187461
+      "sha256": "9591cff40142f00549cf2ee47a8c84955be8f24b7acb6fec89d6fc3270980e4d",
+      "bytes": 213753
     },
     {
       "description": "Built-in theme: Stormy Sea",
       "file": "theme-stormy-sea.png",
       "height": 900,
       "width": 1440,
-      "sha256": "a5a509db8c213984f97879a938000c192ed9a93663876db89f43e2d5cd8c1270",
-      "bytes": 187075
+      "sha256": "4f8f67406543f8813f78edef6ba5ef0079f08be032173e14e5520e186dcd3bed",
+      "bytes": 217368
     },
     {
       "description": "Settings: Appearance",
@@ -93,8 +93,8 @@
       "file": "grid-four-panes.png",
       "height": 1080,
       "width": 1920,
-      "sha256": "d04e6f49463c8e38782b7618333694a3fc355e64463212213838e5cb583e0adc",
-      "bytes": 298823
+      "sha256": "4b0836dcd86d203880e9dfdecd1d9e1a72a7b2bcc816516f764e6b3bdd177cb8",
+      "bytes": 344168
     },
     {
       "description": "New server configuration; untouched empty fields",
@@ -108,9 +108,10 @@
   "method": "Unchanged Release ELF; Qt QWidget::grab; capture-only public-widget UI driver; private loopback demo IRC peer",
   "date": "2026-10-28",
   "applicationVersion": "2.0.0",
-  "sourceCommit": "8d7dcc1278c8199dcfde03096d47725b30ef2c50",
+  "sourceCommit": "2b44e958f10ffebc87c5c9dd3d24b821fdd96d04",
   "qtVersion": "6.4.2",
-  "binarySha256": "1a80cf3a5d3073cd3389d14a81d95f6f9757bf165d0992f3ec8f45a0564c2779",
+  "binarySha256": "2f437d3d1c519981e03cd5377e916fc7e0aa9303a8c548e82cb1caacb99231e7",
   "syntheticDemoData": true,
-  "normalProfileUsed": false
+  "normalProfileUsed": false,
+  "branding": "Original Kotlin cat artwork; monochrome RGB inversion for dark-theme contrast"
 }

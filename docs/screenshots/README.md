@@ -2,6 +2,8 @@
 
 These images show the **actual native LoungeCat Desktop 2.0 application**, captured
 on 28 October 2026 using Qt 6.4.2. They are not generated mockups or retouched UI.
+The gallery includes the restored original cat branding and chat watermark on
+`master` (see the manifest's source revision), which postdate the v2.0.0 release.
 
 - The unchanged Linux Release executable was run with a disposable profile and a
   synthetic IRC peer inside a network namespace with only loopback enabled.
