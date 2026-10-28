@@ -205,6 +205,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         RENAME loungecat.png)
     install(FILES LICENSE COPYRIGHT THIRD_PARTY_NOTICES.md
         DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/loungecat)
+    install(FILES COPYRIGHT DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/loungecat RENAME copyright)
     install(FILES third_party/licenses/LoungeCat-Kotlin-MIT.txt
         DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/loungecat/licenses)
 
@@ -218,6 +219,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
     set(CPACK_DEBIAN_PACKAGE_SECTION net)
     set(CPACK_DEBIAN_PACKAGE_PRIORITY optional)
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "LoungeCat contributors <binkiewka@users.noreply.github.com>")
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
     # Plugins/backends loaded at runtime are not found by ELF shlibdeps.
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "libqt6sql6-sqlite, qt6-qpa-plugins, libssl3, ca-certificates")

@@ -44,6 +44,7 @@ export OUTPUT="$dist/LoungeCat-${version}-x86_64.AppImage"
 "$build/tools/linuxdeploy/squashfs-root/AppRun" --appdir "$stage" \
     --desktop-file packaging/io.github.binkiewka.LoungeCat.desktop \
     --icon-file "$stage/usr/share/icons/hicolor/256x256/apps/loungecat.png" \
+    --library /usr/lib/x86_64-linux-gnu/libasound.so.2 \
     --library /usr/lib/x86_64-linux-gnu/libssl.so.3 \
     --library /usr/lib/x86_64-linux-gnu/libcrypto.so.3 --plugin qt
 python3 packaging/bundle-notices.py "$stage"

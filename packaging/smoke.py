@@ -26,7 +26,11 @@ for entry in manifest['artifacts']:
     assert hashlib.sha256((dist/entry['file']).read_bytes()).hexdigest()==entry['sha256']
 
 def run(argv,**kwargs):
-    return subprocess.run([str(x) for x in argv],check=True,text=True,capture_output=True,timeout=60,**kwargs)
+    try:
+        return subprocess.run([str(x) for x in argv],check=True,text=True,capture_output=True,timeout=60,**kwargs)
+    except subprocess.CalledProcessError as error:
+        (output/'subprocess-failure.log').write_text(str(argv)+'\n'+error.stdout+'\n'+error.stderr)
+        raise
 
 # Test setup runs as root only inside an ephemeral container. No host install.
 assert not Path('/usr/lib/x86_64-linux-gnu/libQt6Core.so.6').exists(), 'Runtime container already has Qt; bundle proof would be masked'
@@ -47,7 +51,11 @@ with tempfile.TemporaryDirectory(prefix='loungecat-package-') as tmp:
         command=['/usr/bin/loungecat']
         run(['desktop-file-validate','/usr/share/applications/io.github.binkiewka.LoungeCat.desktop'])
         assert Path('/usr/share/icons/hicolor/256x256/apps/loungecat.png').exists()
-        assert Path('/usr/share/doc/loungecat/LICENSE').exists()
+        # Official slim containers intentionally exclude most /usr/share/doc
+        # files at dpkg unpack time. Check the payload plus the policy-retained
+        # copyright entry, not the container's optional documentation policy.
+        assert 'usr/share/doc/loungecat/LICENSE' in run(['dpkg-deb','--contents',package]).stdout
+        assert Path('/usr/share/doc/loungecat/copyright').exists()
         dependencies=run(['dpkg-query','-W','-f=${Depends}','loungecat']).stdout
         assert 'libqt6sql6-sqlite' in dependencies and 'libssl3' in dependencies
     else:
