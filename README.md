@@ -1,12 +1,99 @@
-# LoungeCat Desktop 2.0 — native Linux IRC client
+# LoungeCat Desktop 2.0
 
-C++20 / Qt 6 Widgets IRC client with multiple servers, split chat panes, IRC formatting, local history, previews/uploads, notifications, proxies and IRCv3 support. This is the native port of LoungeCat's desktop application, not the Android app compiled for Linux.
+**A native Linux IRC client, with room for every conversation.**
 
-## Desktop v2 transition
+Connect to multiple networks, keep channels side by side, and make the workspace yours
+with seven built-in themes. Built with **C++20 and Qt 6 Widgets**.
 
-This branch is the C++20 / Qt 6 successor to the Kotlin / Compose desktop application in the same repository. Earlier Kotlin releases keep their original version tags; the `legacy/kotlin-v1` branch preserves the last published Kotlin source. Android is a separate application and is not included here.
+[Build & run](BUILD.md) · [Screenshots](#screenshots) · [Moving from v1](docs/MIGRATION-v2.md) · [Release notes](CHANGELOG.md)
 
-**Status: source/release preparation, not a published v2 binary release.** The project version is `2.0.0`; there is no v2 release tag or bundled installer yet. Linux is the validated platform; Windows/macOS support and complete Kotlin feature parity are not certified. See [migration and rollback](docs/MIGRATION-v2.md), [build instructions](BUILD.md), [release notes](CHANGELOG.md) and [known limitations](docs/LIMITATIONS.md).
+![LoungeCat Desktop in Obsidian Veil: channel list, conversation and member roster](docs/screenshots/theme-obsidian-veil.png)
+
+## At a glance
+
+| Feature | What you get |
+| --- | --- |
+| **Your conversations, together** | Multiple IRC networks, channel and private-message lists, member rosters and local history |
+| **A workspace that fits** | Single chat, horizontal/vertical split, or a four-pane grid; independent channel selectors and drafts |
+| **Seven built-in themes** | Obsidian Veil, Dark, Light, High Voltage, Neon Night, Retro Warmth and Stormy Sea; custom-theme support |
+| **More than plain text** | IRC formatting, nickname colours, highlights, chat search, link previews and image uploads |
+| **Connection controls** | TLS verification, SASL PLAIN, NickServ, proxies, explicit reconnect state and IRCv3 support |
+| **Make it yours** | Appearance, chat/logging, notifications/audio, media and spellcheck settings |
+
+## Build & run
+
+**v2 is a source preview, not a published binary release.** There is no v2 installer
+or release tag yet. Linux is the validated target; Windows/macOS and complete v1
+feature/profile parity are not certified.
+
+With a C++20 compiler, CMake 3.24+ and Qt 6.4+ development packages installed:
+
+```sh
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+cmake --build build/release --parallel 2
+LOUNGECAT_DATA_DIR="$HOME/.loungecat-v2-preview" ./build/release/loungecat
+```
+
+The separate preview profile keeps an existing Kotlin profile out of the first-run
+path. Leave `LOUNGECAT_DB_PATH` and `LOUNGECAT_CONFIG` unset. See [BUILD.md](BUILD.md)
+for Debian/Ubuntu dependencies, test commands and runtime requirements, and read the
+[migration/rollback notes](docs/MIGRATION-v2.md) before reusing existing data.
+
+**Packaging direction:** AppImage and `.deb` are the recommended first Linux downloads;
+Flatpak and distro-specific `.rpm` packages can follow. These packages do not exist
+for v2 yet. See [platforms and packaging](docs/PACKAGING.md) for distro/architecture
+coverage and the separate Windows build requirement.
+
+## Screenshots
+
+These are captures of the actual v2 Linux application with synthetic conversations
+and a disposable demo profile—not UI mockups. No private chats or credentials are
+shown. [Capture details](docs/screenshots/README.md).
+
+### Themes
+
+Obsidian Veil is shown above. The same conversation in the other six built-in themes:
+
+| Dark | Light |
+| --- | --- |
+| ![Dark theme](docs/screenshots/theme-dark.png) | ![Light theme](docs/screenshots/theme-light.png) |
+| **High Voltage** | **Neon Night** |
+| ![High Voltage theme](docs/screenshots/theme-high-voltage.png) | ![Neon Night theme](docs/screenshots/theme-neon-night.png) |
+| **Retro Warmth** | **Stormy Sea** |
+| ![Retro Warmth theme](docs/screenshots/theme-retro-warmth.png) | ![Stormy Sea theme](docs/screenshots/theme-stormy-sea.png) |
+
+### Four conversations, one window
+
+Choose a different channel in each pane without switching away from the others.
+
+![Four-pane grid showing lounge, Linux, development and music conversations](docs/screenshots/grid-four-panes.png)
+
+### Settings
+
+| Appearance | Chat & Logs |
+| --- | --- |
+| ![Appearance settings: themes, font size and timestamps](docs/screenshots/settings-appearance.png) | ![Chat and logging settings](docs/screenshots/settings-chat-logs.png) |
+| **Notifications & Audio** | **Media & Spellcheck** |
+| ![Notification and synthesized-audio settings](docs/screenshots/settings-notifications.png) | ![Media, links and spellcheck settings](docs/screenshots/settings-media.png) |
+
+<details>
+<summary>Server setup</summary>
+
+![New IRC server setup dialog with connection and authentication options](docs/screenshots/connect-server.png)
+
+</details>
+
+## From Kotlin v1 to native v2
+
+This is the native successor in the existing `LoungeCat-Desktop` repository, not a
+replacement repository or an Android build. Existing Kotlin releases retain their
+original tags and MIT license; [`legacy/kotlin-v1`](https://github.com/binkiewka/LoungeCat-Desktop/tree/legacy/kotlin-v1)
+preserves the last published Kotlin source. The native successor is GPL-3.0-or-later.
+
+Both desktop implementations default to `~/.loungecat/` on Linux. Full v1-to-v2
+profile upgrade/downgrade compatibility is **not certified**: start with a separate
+preview profile and keep private backups. See [migration](docs/MIGRATION-v2.md)
+and [known limitations](docs/LIMITATIONS.md).
 
 ## Connection behavior
 
