@@ -1,0 +1,116 @@
+{
+  "captures": [
+    {
+      "description": "Built-in theme: Obsidian Veil",
+      "file": "theme-obsidian-veil.png",
+      "height": 900,
+      "width": 1440,
+      "sha256": "fc856d3790acf9b9b6a3185ac98170ba9f6eb09cf040db11a9e1a1af29c3119d",
+      "bytes": 186743
+    },
+    {
+      "description": "Built-in theme: Dark",
+      "file": "theme-dark.png",
+      "height": 900,
+      "width": 1440,
+      "sha256": "e24a0afdc102af76a8fd79f020ae2fba37b2ced393ea95c992361bf8b4ce44fa",
+      "bytes": 189272
+    },
+    {
+      "description": "Built-in theme: Light",
+      "file": "theme-light.png",
+      "height": 900,
+      "width": 1440,
+      "sha256": "77932a76c0f70a1c0f03356b5f24cd7954fec4f891255cd2a94fee19ffda61ed",
+      "bytes": 185494
+    },
+    {
+      "description": "Built-in theme: High Voltage",
+      "file": "theme-high-voltage.png",
+      "height": 900,
+      "width": 1440,
+      "sha256": "ef249552fdcad067966a85adcfe6b64819c6fcf60f30e9f228729849ce8601f2",
+      "bytes": 188430
+    },
+    {
+      "description": "Built-in theme: Neon Night",
+      "file": "theme-neon-night.png",
+      "height": 900,
+      "width": 1440,
+      "sha256": "98001667915ef25151997cd4b54da1d7e89c7ea577ce8300b8605b4a872c7c86",
+      "bytes": 188798
+    },
+    {
+      "description": "Built-in theme: Retro Warmth",
+      "file": "theme-retro-warmth.png",
+      "height": 900,
+      "width": 1440,
+      "sha256": "59d742442f63b6fee489f16525399f8bdafe703f770d0d6434be1ac1b6b12e8d",
+      "bytes": 187461
+    },
+    {
+      "description": "Built-in theme: Stormy Sea",
+      "file": "theme-stormy-sea.png",
+      "height": 900,
+      "width": 1440,
+      "sha256": "a5a509db8c213984f97879a938000c192ed9a93663876db89f43e2d5cd8c1270",
+      "bytes": 187075
+    },
+    {
+      "description": "Settings: Appearance",
+      "file": "settings-appearance.png",
+      "height": 580,
+      "width": 850,
+      "sha256": "4326184ece4fae484c1d48c56c6a7f3905cd19f384b931b1da0ee97fa273799a",
+      "bytes": 25730
+    },
+    {
+      "description": "Settings: Chat & Logs",
+      "file": "settings-chat-logs.png",
+      "height": 580,
+      "width": 850,
+      "sha256": "b6842bc3fc76d7538aa1db90aae51a72ea28025cb9b5c426cfd2073a0bf691bd",
+      "bytes": 33386
+    },
+    {
+      "description": "Settings: Notifications & Audio",
+      "file": "settings-notifications.png",
+      "height": 580,
+      "width": 850,
+      "sha256": "0292e0eca0cee137381253a3fd3d55cc1da5b11076a249fd19b5522890d77e0a",
+      "bytes": 37505
+    },
+    {
+      "description": "Settings: Media & Spellcheck",
+      "file": "settings-media.png",
+      "height": 580,
+      "width": 850,
+      "sha256": "a78d29f92c0e2a5f2e3f0cb9b6a5c29bbd2dd85540a8d8c346ae070b191629c4",
+      "bytes": 53251
+    },
+    {
+      "description": "Four real independent chat panes, synthetic local conversations",
+      "file": "grid-four-panes.png",
+      "height": 1080,
+      "width": 1920,
+      "sha256": "d04e6f49463c8e38782b7618333694a3fc355e64463212213838e5cb583e0adc",
+      "bytes": 298823
+    },
+    {
+      "description": "New server configuration; untouched empty fields",
+      "file": "connect-server.png",
+      "height": 440,
+      "width": 480,
+      "sha256": "17ad5aee629c10640c289acd2c0ca005c1e5396de058345c19f99c10c64d6ebf",
+      "bytes": 35534
+    }
+  ],
+  "method": "Unchanged Release ELF; Qt QWidget::grab; capture-only public-widget UI driver; private loopback demo IRC peer",
+  "date": "2026-10-28",
+  "applicationVersion": "2.0.0",
+  "sourceCommit": "8d7dcc1278c8199dcfde03096d47725b30ef2c50",
+  "qtVersion": "6.4.2",
+  "binarySha256": "1a80cf3a5d3073cd3389d14a81d95f6f9757bf165d0992f3ec8f45a0564c2779",
+  "syntheticDemoData": true,
+  "normalProfileUsed": false
+}

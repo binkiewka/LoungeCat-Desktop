@@ -1,0 +1,9 @@
+FROM debian:12-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake ninja-build pkg-config git ca-certificates curl \
+    qt6-base-dev qt6-base-dev-tools qmake6 libqt6svg6-dev qt6-qpa-plugins \
+    libqt6sql6-sqlite libasound2-dev libssl3 dpkg-dev file patchelf \
+    desktop-file-utils python3 xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src

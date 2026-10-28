@@ -1,0 +1,10 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {"name": "debug", "generator": "Unix Makefiles", "binaryDir": "${sourceDir}/build/debug", "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug", "BUILD_TESTING": "ON"}},
+    {"name": "asan", "inherits": "debug", "binaryDir": "${sourceDir}/build/asan", "cacheVariables": {"LOUNGECAT_SANITIZERS": "address"}},
+    {"name": "tsan", "inherits": "debug", "binaryDir": "${sourceDir}/build/tsan", "cacheVariables": {"LOUNGECAT_SANITIZERS": "thread"}}
+  ],
+  "buildPresets": [{"name": "debug", "configurePreset": "debug"}, {"name": "asan", "configurePreset": "asan"}, {"name": "tsan", "configurePreset": "tsan"}],
+  "testPresets": [{"name": "debug", "configurePreset": "debug", "output": {"outputOnFailure": true}}, {"name": "asan", "configurePreset": "asan", "output": {"outputOnFailure": true}}, {"name": "tsan", "configurePreset": "tsan", "output": {"outputOnFailure": true}}]
+}
