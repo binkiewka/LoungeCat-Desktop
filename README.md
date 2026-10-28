@@ -1,217 +1,74 @@
-# LoungeCat IRC Client
+# LoungeCat Desktop 2.0 — native Linux IRC client
 
-**LoungeCat** is a modern, feature-rich IRC client built for Linux and Windows. It combines the power of the traditional IRC protocol with a sleek, contemporary user interface designed for productivity and ease of use. Built with Kotlin and Jetpack Compose, it offers a responsive and fluid experience.
+C++20 / Qt 6 Widgets IRC client with multiple servers, split chat panes, IRC formatting, local history, previews/uploads, notifications, proxies and IRCv3 support. This is the native port of LoungeCat's desktop application, not the Android app compiled for Linux.
 
-## ✨ Key Features
+## Desktop v2 transition
 
-### 🎨 Modern User Interface
+This branch is the C++20 / Qt 6 successor to the Kotlin / Compose desktop application in the same repository. Earlier Kotlin releases keep their original version tags; the `legacy/kotlin-v1` branch preserves the last published Kotlin source. Android is a separate application and is not included here.
 
-- **Sleek Design**: A clean, material-inspired interface that feels at home on modern desktops.
-- **Theming Support**: Includes **Dark** and **Light** themes to suit your preference.
-- **Responsive Layout**: Fluidly adapts to different window sizes.
-- **Split View**: View multiple channels side-by-side. Right-click any channel to "Open in Split View" for efficient multitasking.
-- **Drag & Drop**: Easily reorganize server and channel tabs with intuitive drag gestures.
-- **Single Instance Lock**: Prevents accidental multiple instances of the application.
-- **Rich Media**:
-  - **Inline Image Previews**: Automatically displays previews for image links (can be toggled).
-  - **Formatted Text**: Full support for IRC colors, bold, italic, and underline (mIRC codes).
+**Status: source/release preparation, not a published v2 binary release.** The project version is `2.0.0`; there is no v2 release tag or bundled installer yet. Linux is the validated platform; Windows/macOS support and complete Kotlin feature parity are not certified. See [migration and rollback](docs/MIGRATION-v2.md), [build instructions](BUILD.md), [release notes](CHANGELOG.md) and [known limitations](docs/LIMITATIONS.md).
 
-## 📸 Screenshots
+## Connection behavior
 
-### 🎭 Themes
+- TLS verification is enabled by default. Saved SASL/NickServ/on-connect credentials and channel keys require TLS; invalid configuration and certificate/authentication failures pause automatic retry.
+- Required **SASL PLAIN** must complete before the connection is marked ready. EXTERNAL is not offered by this configuration model because no client certificate is configured.
+- NickServ-only automatic joins/commands wait for standardized account evidence, not a fixed sleep. If confirmation is unavailable within 15 seconds, the app keeps the IRC connection but withholds automation and reports the reason. Prefer SASL; otherwise identify and join manually.
+- Retry intent, stable-period reset, jitter and idempotent Connect are explicit policy. One configured alternate nickname is attempted before pausing; an already-registered nick is never replaced locally merely because a nick change was rejected.
+- Non-control output is bounded and paced (initial burst up to four commands, then at most one refill per 500 ms); protocol control traffic can bypass the data queue. Retirement clears queued work. Queue acceptance is not proof of server delivery.
+- Nick/channel identity follows the server's CASEMAPPING through transport state, conversation lookup, sidebars, caches and draft keys. Keyed manual joins persist structured key knowledge; deliberate PART removes it.
 
-| | | |
-|:---:|:---:|:---:|
-| ![Theme 1](screens/themes/1.jpg) | ![Theme 2](screens/themes/2.jpg) | ![Theme 3](screens/themes/3.jpg) |
+For low join/quit churn during laptop or phone disconnection, configure a persistent IRC bouncer/core. A local socket alone cannot preserve an upstream session while its host is offline. Roster snapshots are not new joins, and cached history is not recovery of messages never received.
 
-### 🖥️ Split View
+## Implemented stack
 
-| | | |
-|:---:|:---:|:---:|
-| ![Split View 1](screens/split_screen/1.jpg) | ![Split View 2](screens/split_screen/2.jpg) | ![Split View 3](screens/split_screen/3.jpg) |
+| Component | Actual implementation |
+|---|---|
+| Language/build | C++20, CMake 3.24+, Qt automatic MOC/RCC/UIC |
+| UI | Qt 6 Widgets, Svg, virtualized message models/delegates |
+| IRC/TLS/proxies | Custom `IrcClient` over Qt Network `QSslSocket` / `QNetworkProxy` |
+| Policy/authentication | `ConnectionPolicy`, `IrcRegistration`, manager-owned generation/timer adapters |
+| Persistence | Qt SQL / SQLite; Qt JSON; owner-only credential-bearing local database and secret-free portable backups |
+| HTTP/previews | Qt Network; request/response validation in service adapters |
+| Workers | Qt Concurrent / bounded owned thread pools |
+| Sound | ALSA when available; existing synthesized notification implementation |
+| Tests | **QtTest**, synthetic local TCP/TLS/HTTP fixtures; optional ASan+UBSan or TSan build modes |
 
-### ⚙️ Settings
+No startup/RSS benchmark or complete cross-platform feature-parity certification is claimed. Runtime ownership and current repair/test boundaries are documented in [reliability notes](docs/reliability/README.md). Earlier `docs/01`–`05` files are historical conversion plans, not a list of installed alternative libraries.
 
-| | | |
-|:---:|:---:|:---:|
-| ![Settings 1](screens/settings/1.jpg) | ![Settings 2](screens/settings/2.jpg) | ![Settings 3](screens/settings/3.jpg) |
-| ![Settings 4](screens/settings/4.jpg) | ![Settings 5](screens/settings/5.jpg) | ![Settings 6](screens/settings/6.jpg) |
+## Build and test
 
-### 💬 Chat Experience
+On Debian/Ubuntu install CMake, a C++20 compiler, Qt 6 development packages for Core/Gui/Widgets/Network/Sql/Concurrent/Svg and QtTest; ALSA development headers are optional. Example:
 
-- **Spell Checking**:
-  - Real-time spell checking powered by **LanguageTool**.
-  - Support for multiple languages (English, Polish, German, Dutch).
-  - Non-intrusive red squiggly underlines.
-  - **"Fix All" Shortcut** (`Ctrl+M`) to quickly correct mistakes.
-- **Smart Activity & Navigation**:
-  - **Activity Indicators**: Subtle visual cues indicate channels with recent activity, separate from direct mentions.
-  - **Unread Badges**: Distinct highlighting for unread messages and mentions.
-  - **Persistent Scrollback**: Locally caches chat history so you never miss a conversation after a restart.
-- **User List Improvements**:
-  - **Away Status**: Users marked as 'Away' are visually dimmed. Hover to see their away message.
-  - **WHOIS Tooltip**: Hover over any nickname to see their WHOIS information (real name, server, idle time) in a tooltip.
-  - **Channel Modes**: Clear icons for Ops, Voice, and other user modes.
-- **Tab Completion**: Intelligent auto-completion for nicknames, commands, and channels. (Tab / Shift+Tab to cycle).
-- **History & Logging**:
-  - **Persistent Scrollback**: Locally caches chat history so you never miss a conversation.
-  - **History Replay**: Automatically loads the last `n` lines (configurable) when you join a channel.
-  - **Topic Persistence**: Remembers channel topics even after restarting.
-- **Smart Auto-Scroll**: Intelligent scrolling behavior that pauses when you read history and resumes when you catch up.
-- **Pastebin Integration**: Automatically uploads messages exceeding your configured limit to `0x0.st`. (Default: 400 chars).
-- **URL Shortening**: Automatically shortens long URLs (via is.gd) before sending, with configurable threshold.
-- **Image Upload**: Upload images directly to ImgBB via the upload button or paste into chat. The link is automatically inserted.
-- **Search & Exports**:
-  - **Searchable Logs**: Quickly find past messages in the app.
-  - **Text Logging**: Automatically saves chat history to plain text files (`logs/Server/Channel.log`) for easy archiving.
-  - **Export Chat**: Export current conversation logs to Text, HTML, or JSON formats.
+```sh
+cmake --preset debug
+cmake --build --preset debug --parallel 2
+ctest --preset debug
+```
 
-### 🔌 Connectivity & Security
+The three test executables use synthetic fixtures and an offscreen Qt platform. Do not point tests at a personal profile. For native ownership checks:
 
-- **Multi-Protocol Support**:
-  - **IRC**: Full support for standard IRC networks.
-  - **Matrix (Experimental)**: Connect to Matrix homeservers using your access token.
-- **Proxy Support**:
-  - **SOCKS4/5** and **HTTP** proxy support for privacy and bypassing restrictions.
-  - **Authentication**: Full support for proxy username/password authentication.
-  - Configure proxies per-server for granular control.
-- **Privacy & Security**:
-  - **Link Preview Privacy**:
-    - **Proxy Support**: Fetch previews through a proxy to hide your IP.
-    - **Configurable**: Choose whether to process links from everyone or just yourself.
-  - **SSL/TLS**: Secure connections to IRC servers.
-  - **Certificate Pinning**: Pin server SSL certificates for maximum security (TOFU - Trust On First Use).
-  - **SASL Authentication**: Securely identify with services (NickServ) during connection.
-- **Service Message Routing**: cleans up your chat by routing messages from NickServ, ChanServ, etc., to dedicated windows.
-- **NickServ Integration**: Auto-identify with NickServ upon connecting.
+```sh
+cmake --preset asan
+cmake --build --preset asan --parallel 2
+ASAN_OPTIONS=detect_leaks=1 ctest --preset asan
+```
 
-### 🔔 Notifications & Alerts
+TSan has a separate preset and is not equivalent to an ASan result. The CI workflow builds normal and ASan variants; adding workflow source does not mean a hosted CI run has occurred.
 
-- **Desktop Notifications**: Native system notifications for mentions and private messages.
-- **Sound Alerts**: Customizable sound effects for mentions, messages, and connection events.
-- **Update Notifier**: Automatically checks for new versions on startup and notifies you of updates.
-- **Custom Highlights**: Define custom words or regex patterns to trigger highlights and notifications.
+## Profiles and migration
 
-### ⚡ Power User Tools
+The normal profile lives under `~/.loungecat/`; `AppConfig` supports an isolated data directory for test/fixture use. Historical databases/caches are migrated or preserved, not reset. SQLite's additive `channel_keys` field stores structured rejoin keys with the same owner-only, local credential policy as existing saved passwords. Portable backups omit passwords, API keys, channel keys and saved commands, and disable auto-connect in exported profiles. Re-enter required secrets after import. Local database files still contain credentials and must be kept private. Older backups may also contain credentials. See [historical repair contracts](docs/repairs/README.md).
 
-- **Slash Commands**: Full support for standard commands like `/join`, `/part`, `/nick`, `/me`, etc.
-  - **/sysinfo**: Display detailed system information (OS, CPU, Memory, GPU, etc.).
-    - `-o` or `--public`: Send output to the channel.
-    - `-e` or `--echo`: Echo locally (default).
-    - `[subcommands]`: Filter info, e.g., `/sysinfo cpu memory`.
-- **Raw Commands**: Execute raw IRC protocol commands for advanced control.
-- **On-Connect Commands**: Define custom raw commands to execute automatically after connection.
-- **Server Configuration Import/Export**: Backup and share your server lists easily.
-- **Channel Statistics**: View detailed user counts (Ops, Voiced, Away) and activity levels.
-- **Keyboard Shortcuts**: Extensive keyboard navigation and control.
+### Text-log identity
 
----
+New text logs use `logs/v2/network-<saved-server-id>/`. Channel/query filenames have a readable bounded prefix and a digest of the IRC-casemapped target, so punctuation, Unicode names and duplicate network display names cannot mix unrelated conversations. Renaming a network keeps its saved ID and log directory.
 
-## 🚀 Installation & Running
+Legacy history is retained. The new writer does not append to or merge ambiguous legacy log files; existing size/file quotas and explicit storage-error reporting still apply.
 
-We provide multiple ways to install and run LoungeCat to suit your platform and preference.
+## License and dependencies
 
-### 🐧 Linux
+LoungeCat C++ application source is licensed under **GNU GPL version 3 or later** (`GPL-3.0-or-later`). See the full [license](LICENSE) and the application's [copyright and license grant](COPYRIGHT).
 
-#### Option 1: AppImage (Recommended)
+Anyone may use, study, modify and redistribute it, including commercially, under the GPL's terms. Distributed modified versions must preserve those freedoms and meet the corresponding-source obligations; private modifications do not have to be published. This keeps distributed derivatives open-source instead of permitting closed-source redistributions of modified application code.
 
-The AppImage is a universal package that runs on almost any Linux distribution.
-
-1. Download the `.AppImage` file from the [Releases](https://github.com/binkiewka/LoungeCat-Desktop/releases) page.
-2. Make it executable:
-
-   ```bash
-   chmod +x LoungeCat-x86_64.AppImage
-   ```
-
-3. Run it:
-
-   ```bash
-   ./LoungeCat-x86_64.AppImage
-   ```
-
-#### Option 2: DEB Package (Debian/Ubuntu)
-
-For Debian, Ubuntu, Linux Mint, and derivatives.
-
-1. Download the `.deb` file.
-2. Install via terminal:
-
-   ```bash
-   sudo dpkg -i loungecat_1.0.0-1_amd64.deb
-   sudo apt-get install -f  # To fix any missing dependencies
-   ```
-
-3. Launch "LoungeCat" from your application menu.
-
-### 🪟 Windows
-
-#### MSI Installer
-
-1. Download the `.msi` installer.
-2. Double-click to run the setup wizard.
-3. Launch **LoungeCat** from the Start Menu.
-
-### 🐳 Docker
-
-Run LoungeCat in an isolated container. Requires Docker installed.
-
-1. Clone the repository or download the `docker` directory.
-2. Run the startup script (Linux):
-
-   ```bash
-   ./start-docker.sh
-   ```
-
-   *This script handles permissions to allow the container to display the UI on your X11 server.*
-
-   **Or manually with Docker Compose:**
-
-   ```bash
-   xhost +local:docker  # Allow UI access
-   docker compose -f docker/docker-compose.yml up --build
-   ```
-
-### 🕸️ Headless / Web Access
-
-Run LoungeCat on a headless server and access it via your web browser (noVNC).
-
-1. Run the headless startup script:
-
-   ```bash
-   ./start-headless.sh
-   ```
-
-2. Open your browser and navigate to:
-
-   **[http://localhost:6080](http://localhost:6080)**
-
-   *No password required by default.*
-
----
-
-## 🛠 Configuration
-
-### First Run
-
-On the first launch, you will be prompted to add a server. You can choose from presets or enter details manually:
-
-- **Server Name**: A friendly name for the network (e.g., "Libera.Chat").
-- **Hostname**: The server address (e.g., `irc.libera.chat`).
-- **Port**: Usually `6697` (SSL) or `6667` (Plain).
-
-### Managing Settings
-
-Access **Settings** via the gear icon in the sidebar.
-
-- **Appearance**: Change themes (Dark/Light), font size, and message styling.
-- **Timezone**: Select your preferred timezone for timestamps.
-- **Spell Check**: Enable/disable, select language, and manage dictionary.
-- **Notifications**: Toggle sounds and desktop alerts for specific events (Mentions, PMs, Highlights).
-- **Advanced**: Manage ignored users, custom highlighting rules (Words/Regex), and proxy configurations.
-
----
-
-## 🤝 Contributing
-
-LoungeCat is open-source! Issues and Pull Requests are welcome.
+[Third-party notices](THIRD_PARTY_NOTICES.md) describe Qt, ALSA and TLS dependency boundaries; those components retain their own licenses. No code from the GPL/AGPL comparison clients was copied into this application. The earlier Kotlin desktop source remains MIT-licensed at its original revisions; its retained notice is in [third_party/licenses/LoungeCat-Kotlin-MIT.txt](third_party/licenses/LoungeCat-Kotlin-MIT.txt). The separate Android application retains its existing MIT license.

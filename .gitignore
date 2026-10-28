@@ -1,54 +1,24 @@
-# IntelliJ IDEA
-.idea/
-*.iws
-*.iml
-*.ipr
-/out/
-!/assets/idea/
-
-# Gradle
-.gradle/
-build/
-!gradle/wrapper/gradle-wrapper.jar
-!**/src/main/**/build/
-!**/src/test/**/build/
-
-# Kotlin / Java
-.kotlin/
-*.class
+/build/
+/build-*/
+/.cache/
+/.idea/
+/.vscode/
+/compile_commands.json
+*.user
 *.log
-*.ctxt
-.mtj.tmp/
-*.jar
-!gradle/wrapper/gradle-wrapper.jar
-*.war
-*.nar
-*.ear
-*.zip
-*.tar.gz
-*.rar
-
-# Android
-local.properties
-.cxx/
 *.jks
 *.keystore
+.env
+.env.*
+# tests/fixtures/localhost-key.pem is a deliberately public loopback-only test key.
 
-# System
-.DS_Store
-Thumbs.db
-
-# Project Specific
+/CMakeUserPresets.json
+/dist/
+/package/
 *.AppImage
 *.deb
-logs/
-bin/
-
-# Agent & Editor
-.agent/
-CLAUDE.md
-.vscode/
-build_appimage.sh
-tests/
-logs/
-.claude/
+*.rpm
+*.tar.gz
+*.db
+*.db-shm
+*.db-wal

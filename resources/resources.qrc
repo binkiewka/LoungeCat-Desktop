@@ -1,0 +1,28 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/icons">
+        <file alias="icon.png">icons/icon.png</file>
+        <file alias="logo.png">icons/logo.png</file>
+        <file alias="logo_transparent.png">icons/logo_transparent.png</file>
+        <file alias="tray_icon.png">icons/tray_icon.png</file>
+        <file alias="plus.svg">icons/svg/plus.svg</file>
+        <file alias="grid.svg">icons/svg/grid.svg</file>
+        <file alias="settings.svg">icons/svg/settings.svg</file>
+        <file alias="backup.svg">icons/svg/backup.svg</file>
+        <file alias="help.svg">icons/svg/help.svg</file>
+        <file alias="search.svg">icons/svg/search.svg</file>
+        <file alias="download.svg">icons/svg/download.svg</file>
+        <file alias="trash.svg">icons/svg/trash.svg</file>
+        <file alias="users.svg">icons/svg/users.svg</file>
+        <file alias="image.svg">icons/svg/image.svg</file>
+        <file alias="send.svg">icons/svg/send.svg</file>
+        <file alias="close.svg">icons/svg/close.svg</file>
+        <file alias="hash.svg">icons/svg/hash.svg</file>
+        <file alias="server.svg">icons/svg/server.svg</file>
+        <file alias="message.svg">icons/svg/message.svg</file>
+        <file alias="chevron-left.svg">icons/svg/chevron-left.svg</file>
+        <file alias="chevron-right.svg">icons/svg/chevron-right.svg</file>
+        <file alias="chevron-up.svg">icons/svg/chevron-up.svg</file>
+        <file alias="chevron-down.svg">icons/svg/chevron-down.svg</file>
+    </qresource>
+</RCC>

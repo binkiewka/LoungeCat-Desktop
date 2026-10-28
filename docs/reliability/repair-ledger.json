@@ -1,0 +1,92 @@
+{
+  "date": "2026-10-23",
+  "scope": "targeted connectivity/reliability review",
+  "findings": [
+    {
+      "id": "C-01",
+      "platform": "C++",
+      "status": "repaired and locally verified",
+      "repair": "TLS required before dialing for saved SASL/NickServ, on-connect work and channel keys.",
+      "evidence": "plaintextSavedCredentialsAreRejected (4 rows)"
+    },
+    {
+      "id": "H-01",
+      "platform": "C++",
+      "status": "repaired and locally verified",
+      "repair": "Required SASL fails closed on missing/unsupported/rejected capability or credentials; readiness requires 903/907.",
+      "evidence": "requiredSaslFailsClosed (3), successfulSaslRegistersBeforeJoining (2)"
+    },
+    {
+      "id": "H-02",
+      "platform": "C++",
+      "status": "repaired and locally verified",
+      "repair": "Bounded paced output; immediate protocol controls; retirement clears queued data.",
+      "evidence": "outgoingBurstIsPacedControlIsPromptAndDisconnectRetiresQueue"
+    },
+    {
+      "id": "H-05",
+      "platform": "Both",
+      "status": "repaired and locally verified",
+      "repair": "Typed terminal/configuration/auth/TLS/storage failures pause automatic retries; explicit connect or settings repair resumes.",
+      "evidence": "policyHasStableResetJitterAndStickyPause; certificateMismatchIsActionableRatherThanRetryable; permanentErrorsStayPausedAcrossDisconnectAndNetworkEvents; service adapter regression"
+    },
+    {
+      "id": "H-06",
+      "platform": "C++",
+      "status": "repaired and locally verified",
+      "repair": "Only accepted identity changes update own nickname; registered rejection retains confirmed nick; one configured alternate before pausing.",
+      "evidence": "rejectedRegisteredNickKeepsConfirmedIdentity"
+    },
+    {
+      "id": "H-07",
+      "platform": "C++",
+      "status": "repaired and locally verified",
+      "repair": "Negotiated CASEMAPPING through transport, conversations, cache, UI, ignore matching and drafts; merge equivalent buffers without discarding unique messages.",
+      "evidence": "equivalentQueriesMergeAndNegotiatedAsciiCanSeparateThem; mappingChangeRetainsOffscreenDraftsAndAliasSelection; ignoreListUsesNegotiatedIdentityWithoutDroppingStoredPreferences"
+    },
+    {
+      "id": "M-02",
+      "platform": "C++",
+      "status": "repaired and locally verified",
+      "repair": "Bounded randomized retry delays and stable-period reset; selected delay appears in server status.",
+      "evidence": "policyHasStableResetJitterAndStickyPause"
+    },
+    {
+      "id": "M-03",
+      "platform": "C++",
+      "status": "repaired and locally verified",
+      "repair": "Idempotent connect, generation-bound retries, explicit success/disconnect cancellation; socket errors retire failed transport.",
+      "evidence": "connectIsIdempotentAndReadyCancelsRetry; existing reconnectCancellationDoesNotOpenAnotherSocket"
+    },
+    {
+      "id": "M-04",
+      "platform": "C++",
+      "status": "repaired and locally verified",
+      "repair": "Structured channel keys survive rejoin/save/export; additive SQLite migration; deliberate PART forgets key; credential files owner-only.",
+      "evidence": "keyedJoinPersistsAndNickServWaitsForAccountEvidence; existing backupValidationAndRoundTrip"
+    },
+    {
+      "id": "M-05",
+      "platform": "Both",
+      "status": "repaired and locally verified",
+      "repair": "NickServ-only automatic joins/commands wait for standardized own-account evidence; timeout withholds automation but leaves manual identification/join possible.",
+      "evidence": "keyedJoinPersistsAndNickServWaitsForAccountEvidence; Ircv3TransportTest NickServ confirmation regression"
+    },
+    {
+      "id": "D-01",
+      "platform": "Both",
+      "status": "repaired and locally verified",
+      "repair": "Pure session/registration/restoration policy boundaries, injected clock/random or time inputs, client factory, tested adapter ownership. No wholesale rewrite claimed.",
+      "evidence": "SessionSupervisorTest (8), RestorationPolicyTest (2), C++ pure policy and manager fixture checks"
+    },
+    {
+      "id": "D-02",
+      "platform": "Both",
+      "status": "repaired and locally verified",
+      "repair": "Current architecture/docs replace inaccurate stack/benchmark claims; SHA-pinned read-only CI prepared; Android existing MIT declaration restored with LICENSE and exact Kitteh notices. C++ GPL-3.0-or-later applied with official full text and explicit application grant, following the owner's delegated choice.",
+      "evidence": "Local build/tests/lints and workflow YAML validation; hosted CI NOT run; official GPLv3 text and GPL-3.0-or-later application notice verified"
+    }
+  ],
+  "deviceOrLiveNetworkCertification": false,
+  "hostedCiExecuted": false
+}
