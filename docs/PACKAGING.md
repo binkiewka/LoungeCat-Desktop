@@ -21,8 +21,8 @@ manifest and build dependency inventory. Verify the downloaded assets:
 
 ```sh
 sha256sum --check SHA256SUMS
-chmod +x LoungeCat-2.0.0-x86_64.AppImage
-LOUNGECAT_DATA_DIR="$HOME/.loungecat-v2-preview" ./LoungeCat-2.0.0-x86_64.AppImage
+chmod +x LoungeCat-2.0.1-x86_64.AppImage
+LOUNGECAT_DATA_DIR="$HOME/.loungecat-v2-preview" ./LoungeCat-2.0.1-x86_64.AppImage
 ```
 
 If FUSE is unavailable, use `APPIMAGE_EXTRACT_AND_RUN=1` with the same command.
@@ -30,7 +30,7 @@ The desktop/display stack and working graphics drivers still come from the host.
 For a Debian/Ubuntu package, install using apt so dependencies are resolved:
 
 ```sh
-sudo apt install ./loungecat_2.0.0_amd64.deb
+sudo apt install ./loungecat_2.0.1_amd64.deb
 LOUNGECAT_DATA_DIR="$HOME/.loungecat-v2-preview" loungecat
 ```
 
@@ -109,7 +109,7 @@ ARM64 needs separate builds and runtime validation.
 
 ## Automatic publication
 
-Push a stable tag matching the CMake version, for example `v2.0.0`. CI builds and
+Push a stable tag matching the CMake version, for example `v2.0.1`. CI builds and
 checks AppImage/deb on both Debian-family distributions, RPM on Fedora 44 and
 the Gentoo source recipe. The release job depends on **all** native, package,
 Gentoo and runtime jobs succeeding; a failure blocks upload.

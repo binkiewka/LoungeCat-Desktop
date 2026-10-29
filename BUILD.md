@@ -36,8 +36,9 @@ cmake --build --preset debug --parallel 2
 ctest --preset debug
 ```
 
-The repository includes normal, ASan/UBSan and TSan presets. The read-only CI
-workflow builds/tests normal and ASan variants; it does not publish releases.
+The repository includes normal, ASan/UBSan and TSan presets. The native CI jobs
+build/test normal and ASan variants with read-only permissions. A separate,
+tag-only release job publishes only after all native/package gates pass.
 The tests use synthetic local fixtures and isolated temporary profiles.
 Documented historical regression runs are not proof of a hosted run on this
 branch. See [limitations](docs/LIMITATIONS.md).
