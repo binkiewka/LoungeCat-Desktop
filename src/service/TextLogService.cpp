@@ -135,8 +135,11 @@ bool TextLogService::logMessage(const QString& serverName, const QString& channe
 bool TextLogService::flushSync() {
     m_pool.waitForDone();
     bool success = m_lastError.isEmpty();
-    for (auto* watcher : findChildren<QFutureWatcher<QString>*>()) {
-        if (watcher->isFinished() && !watcher->result().isEmpty()) { m_lastError = watcher->result(); success = false; }
+    // Template watchers have no Q_OBJECT of their own. Newer Qt versions
+    // correctly reject them as findChildren's meta-object search type.
+    for (auto* base : findChildren<QFutureWatcherBase*>()) {
+        auto* watcher = dynamic_cast<QFutureWatcher<QString>*>(base);
+        if (watcher && watcher->isFinished() && !watcher->result().isEmpty()) { m_lastError = watcher->result(); success = false; }
     }
     return success;
 }
