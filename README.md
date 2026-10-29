@@ -15,6 +15,32 @@ LoungeCat is an IRC client for Linux, built with C++20 and Qt 6 Widgets.
 - Choose from seven built-in themes or create a custom theme; adjust fonts, colours and timestamps.
 - Display link previews, upload images, and enable spellchecking and notification sounds.
 
+### Long messages
+
+To avoid flooding a channel with text, LoungeCat can upload a long message to
+[0x0.st](https://0x0.st) and send a link with its line and character counts instead.
+This is enabled by default for messages over **400 characters** or **five lines**.
+In **Settings → Media & Spellcheck**, you can disable **Auto-upload long messages
+to 0x0.st Pastebin** or change the character threshold. No API key is needed.
+
+Automatic paste uploads are blocked in private messages, private channels and
+channels whose privacy status is unknown; the draft is kept instead.
+
+### Image uploads
+
+Images are hosted on [ImgBB](https://imgbb.com); LoungeCat posts the resulting
+image link to the current channel or private conversation.
+
+1. Get an API key from [api.imgbb.com](https://api.imgbb.com/).
+2. Enter it in **Settings → Media & Spellcheck → ImgBB API Key** and save.
+3. Use the **Upload image** button to choose a file, or type
+   `/uploadimage /path/to/image.png`. Use `/uploadimage` without a path to upload
+   an image from the clipboard. `/img` is an alias.
+
+Still images are supported; animated images are not. The upload limit is 8 MiB.
+Both features upload content to third-party services, not to the IRC server;
+anyone with the resulting link may be able to view it.
+
 ## Install
 
 Download a package from [GitHub Releases](https://github.com/binkiewka/LoungeCat-Desktop/releases/latest). The commands below use version **2.0.1**; substitute the version you downloaded.
