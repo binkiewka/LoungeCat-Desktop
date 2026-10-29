@@ -151,8 +151,26 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Prepare exact source and Gentoo overlay with source Manifest
         run: bash packaging/gentoo/prepare.sh
-      - name: Prepare pinned Gentoo environment with signed binary dependencies
-        run: docker build -t loungecat-gentoo -f packaging/gentoo/Dockerfile .
+      - name: Restore the source-independent Gentoo dependency image
+        id: gentoo-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build/gentoo-image.tar
+          key: gentoo-amd64-v1-${{ hashFiles('packaging/gentoo/Dockerfile') }}
+      - name: Load cached Gentoo dependency image
+        if: steps.gentoo-cache.outputs.cache-hit == 'true'
+        run: docker load -i build/gentoo-image.tar
+      - name: Prepare pinned Gentoo dependency environment
+        if: steps.gentoo-cache.outputs.cache-hit != 'true'
+        run: |
+          docker build -t loungecat-gentoo -f packaging/gentoo/Dockerfile .
+          docker save loungecat-gentoo -o build/gentoo-image.tar
+      - name: Cache dependencies, never application build outputs
+        if: steps.gentoo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build/gentoo-image.tar
+          key: gentoo-amd64-v1-${{ hashFiles('packaging/gentoo/Dockerfile') }}
       - name: Portage source build, QA, regression fixtures and installed GUI/TLS/uninstall
         run: |
           mkdir -p package-results-gentoo
