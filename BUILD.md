@@ -1,7 +1,7 @@
-# Building LoungeCat Desktop 2.0
+# Building LoungeCat
 
-Linux, C++20, CMake 3.24 or newer, and Qt 6.4 or newer are required. The native
-application uses Qt Widgets, not the Kotlin/Compose or Android toolchains.
+Requires Linux, a C++20 compiler, CMake 3.24 or newer, and Qt 6.4 or newer.
+Run these commands from the repository root.
 
 ## Debian / Ubuntu
 
@@ -9,7 +9,7 @@ application uses Qt Widgets, not the Kotlin/Compose or Android toolchains.
 sudo apt-get install build-essential cmake pkg-config qt6-base-dev libqt6svg6-dev libqt6sql6-sqlite qt6-qpa-plugins libasound2-dev
 cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
 cmake --build build/release --parallel 2
-./build/release/loungecat --version
+./build/release/loungecat
 ```
 
 ALSA development headers are optional in the default `-DLOUNGECAT_ALSA=AUTO` mode.
@@ -18,15 +18,14 @@ the backend explicitly. Qt's SQLite driver, the selected display platform plugin
 working Qt TLS backend and normal system runtime libraries must be installed.
 This produces a dynamically linked executable, not an AppImage or installer.
 
-For a first v2 session, keep the existing Kotlin profile separate:
+Settings and history are stored in `~/.loungecat/`. To use a separate profile:
 
 ```sh
-LOUNGECAT_DATA_DIR="$HOME/.loungecat-v2-preview" ./build/release/loungecat
+LOUNGECAT_DATA_DIR="$HOME/.loungecat-work" ./build/release/loungecat
 ```
 
 Leave `LOUNGECAT_DB_PATH` and `LOUNGECAT_CONFIG` unset when using this isolated
-profile, since those optional overrides take precedence. Read
-[migration notes](docs/MIGRATION-v2.md) before opening an existing profile.
+profile, since those optional overrides take precedence.
 
 ## Contributor regression checks
 
@@ -36,12 +35,10 @@ cmake --build --preset debug --parallel 2
 ctest --preset debug
 ```
 
-The repository includes normal, ASan/UBSan and TSan presets. The native CI jobs
-build/test normal and ASan variants with read-only permissions. A separate,
-tag-only release job publishes only after all native/package gates pass.
-The tests use synthetic local fixtures and isolated temporary profiles.
-Documented historical regression runs are not proof of a hosted run on this
-branch. See [limitations](docs/LIMITATIONS.md).
+The repository includes normal, ASan/UBSan and TSan presets. Tests use local
+fixtures and isolated temporary profiles. CI runs normal and ASan/UBSan builds;
+tagged releases also require the package checks described in the
+[packaging guide](docs/PACKAGING.md).
 
 ## Build the CI packages locally
 

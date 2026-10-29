@@ -3,8 +3,9 @@
 CI builds **x86_64 AppImage and `.deb`** on Debian 12 (glibc 2.36, Qt 6.4),
 a **Fedora 44 x86_64 RPM** in a native Fedora environment, and a **Gentoo amd64
 ebuild plus complete overlay** against the exact same source commit.
-Each format is downloaded into clean Debian 12 and Ubuntu 24.04 runtime containers
-and checked before release. The runtime images start without Qt installed, so
+AppImage and deb packages are checked in clean Debian 12 and Ubuntu 24.04 runtime
+containers; RPM and Gentoo have their own build and runtime checks.
+The runtime images start without Qt installed, so
 AppImage's bundled libraries cannot be masked by build-machine dependencies.
 
 ## Download and run
@@ -22,7 +23,7 @@ manifest and build dependency inventory. Verify the downloaded assets:
 ```sh
 sha256sum --check SHA256SUMS
 chmod +x LoungeCat-2.0.1-x86_64.AppImage
-LOUNGECAT_DATA_DIR="$HOME/.loungecat-v2-preview" ./LoungeCat-2.0.1-x86_64.AppImage
+./LoungeCat-2.0.1-x86_64.AppImage
 ```
 
 If FUSE is unavailable, use `APPIMAGE_EXTRACT_AND_RUN=1` with the same command.
@@ -31,18 +32,17 @@ For a Debian/Ubuntu package, install using apt so dependencies are resolved:
 
 ```sh
 sudo apt install ./loungecat_2.0.1_amd64.deb
-LOUNGECAT_DATA_DIR="$HOME/.loungecat-v2-preview" loungecat
+loungecat
 ```
 
-Use the version in the downloaded filenames. Leave `LOUNGECAT_DB_PATH` and
-`LOUNGECAT_CONFIG` unset for the separate preview profile. Read
-[migration/rollback notes](MIGRATION-v2.md) before opening old Kotlin data.
+Use the version in the downloaded filenames. Settings and history are stored in
+`~/.loungecat/`; set `LOUNGECAT_DATA_DIR` to use a different profile directory.
 
 ## Fedora 44 RPM
 
 ```sh
 sudo dnf install ./loungecat-2.0.1-1.fc44.x86_64.rpm
-LOUNGECAT_DATA_DIR="$HOME/.loungecat-v2-preview" loungecat
+loungecat
 ```
 
 Use dnf, not a bare rpm command, so declared dependencies are resolved. This is a
@@ -118,8 +118,8 @@ exact source commit, every required package checksum and the Gentoo source Manif
 Six release-integrity tests also check missing packages, changed bytes, mixed source
 revisions, wrong versions and mismatching Gentoo source digests.
 Assets are uploaded to a draft first; only a completed upload is published. An
-already published release is never overwritten by a rerun. No Android files are
-built or uploaded. Branch/PR pushes never publish releases.
+already published release is never overwritten by a rerun.
+Branch/PR pushes never publish releases.
 
 The pipeline uses only its narrowly scoped release-job `GITHUB_TOKEN`; no new
 personal token or external publication service is needed. Deployment tools are
