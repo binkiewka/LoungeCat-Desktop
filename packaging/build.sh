@@ -2,6 +2,7 @@
 set -euo pipefail
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo"
+python3 packaging/check-source.py
 test "$(uname -m)" = x86_64 || { echo 'This packaging pipeline currently targets x86_64.' >&2; exit 1; }
 build="$repo/build/packages"
 dist="$repo/dist"

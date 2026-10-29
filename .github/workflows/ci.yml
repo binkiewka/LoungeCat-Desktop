@@ -45,7 +45,7 @@ jobs:
           retention-days: 14
 
   release:
-    needs: [native, packages, package-smoke]
+    needs: [native, release-assets, package-smoke, rpm-smoke, gentoo]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -58,7 +58,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: loungecat-linux-x86_64
+          name: loungecat-release-linux-x86_64
           path: dist/
       - name: Verify tag, source revision and every release checksum
         run: python3 packaging/verify-release.py --dist dist --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA"
@@ -101,4 +101,106 @@ jobs:
           name: package-smoke-${{ strategy.job-index }}
           path: package-results/
           if-no-files-found: warn
+          retention-days: 14
+
+  rpm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Build Fedora 44 native packaging environment
+        run: docker build -t loungecat-rpm-builder -f packaging/rpm/Dockerfile.build .
+      - name: Build native Fedora RPM and dependency inventory
+        run: docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" loungecat-rpm-builder bash packaging/rpm/build.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: loungecat-rpm-fedora44-x86_64
+          path: dist-rpm/
+          if-no-files-found: error
+          retention-days: 14
+
+  rpm-smoke:
+    needs: rpm
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: loungecat-rpm-fedora44-x86_64
+          path: dist-rpm/
+      - name: Build clean Fedora runtime without Qt
+        run: docker build -t loungecat-rpm-runtime -f packaging/rpm/Dockerfile.runtime .
+      - name: Resolve RPM dependencies and test actual installed GUI/plugins/TLS/uninstall
+        run: |
+          mkdir -p package-results-rpm
+          docker run --rm -v "$PWD/dist-rpm:/packages" -v "$PWD/package-results-rpm:/results" \
+            loungecat-rpm-runtime python3 /packages/test-support/smoke.py --format rpm --dist /packages --output /results
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: package-smoke-fedora44-rpm
+          path: package-results-rpm/
+          if-no-files-found: warn
+          retention-days: 14
+
+  gentoo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Prepare exact source and Gentoo overlay with source Manifest
+        run: bash packaging/gentoo/prepare.sh
+      - name: Prepare pinned Gentoo environment with signed binary dependencies
+        run: docker build -t loungecat-gentoo -f packaging/gentoo/Dockerfile .
+      - name: Portage source build, QA, regression fixtures and installed GUI/TLS/uninstall
+        run: |
+          mkdir -p package-results-gentoo
+          docker run --rm --network none -v "$PWD:/src:ro" -v "$PWD/build/gentoo:/sources:ro" \
+            -v "$PWD/dist-gentoo:/packages" -v "$PWD/package-results-gentoo:/results" \
+            loungecat-gentoo bash /src/packaging/gentoo/test.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: loungecat-gentoo-amd64
+          path: dist-gentoo/
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: package-smoke-gentoo-ebuild
+          path: package-results-gentoo/
+          if-no-files-found: warn
+          retention-days: 14
+
+  release-assets:
+    needs: [packages, rpm, gentoo]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: loungecat-linux-x86_64
+          path: release-inputs/debian/
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: loungecat-rpm-fedora44-x86_64
+          path: release-inputs/rpm/
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: loungecat-gentoo-amd64
+          path: release-inputs/gentoo/
+      - name: Test release integrity gates
+        run: python3 -m unittest discover -s packaging -p 'test_*.py' -v
+      - name: Aggregate every platform and verify all required release assets
+        run: |
+          python3 packaging/merge-release.py --inputs release-inputs --output dist
+          version=$(python3 -c 'import json; print(json.load(open("dist/package-manifest.json"))["version"])')
+          python3 packaging/verify-release.py --dist dist --tag "v$version" --commit "$GITHUB_SHA"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: loungecat-release-linux-x86_64
+          path: dist/
+          if-no-files-found: error
           retention-days: 14

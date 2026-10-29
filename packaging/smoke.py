@@ -15,7 +15,7 @@ import threading
 import time
 
 parser=argparse.ArgumentParser()
-parser.add_argument('--format',choices=['appimage','deb'],required=True)
+parser.add_argument('--format',choices=['appimage','deb','rpm','gentoo'],required=True)
 parser.add_argument('--dist',type=Path,required=True)
 parser.add_argument('--output',type=Path,required=True)
 args=parser.parse_args()
@@ -60,7 +60,8 @@ def close_window(window_id, display_name):
     finally:x.XCloseDisplay(display)
 
 # Test setup runs as root only inside an ephemeral container. No host install.
-assert not Path('/usr/lib/x86_64-linux-gnu/libQt6Core.so.6').exists(), 'Runtime container already has Qt; bundle proof would be masked'
+if args.format in ('appimage','deb','rpm'):
+    assert not any(Path('/usr').glob('lib*/**/libQt6Core.so.6')), 'Runtime container already has Qt; dependency/bundle proof would be masked'
 with tempfile.TemporaryDirectory(prefix='loungecat-package-') as tmp:
     root=Path(tmp); env=os.environ.copy()
     for key in ['QT_PLUGIN_PATH','QT_QPA_PLATFORM_PLUGIN_PATH','LD_LIBRARY_PATH','LOUNGECAT_DB_PATH','LOUNGECAT_CONFIG']:
@@ -85,6 +86,22 @@ with tempfile.TemporaryDirectory(prefix='loungecat-package-') as tmp:
         assert Path('/usr/share/doc/loungecat/copyright').exists()
         dependencies=run(['dpkg-query','-W','-f=${Depends}','loungecat']).stdout
         assert 'libqt6sql6-sqlite' in dependencies and 'libssl3' in dependencies
+    elif args.format=='rpm':
+        package=next(dist.glob('*.rpm'))
+        subprocess.run(['dnf','install','-y','--setopt=install_weak_deps=False',str(package)],check=True)
+        command=['/usr/bin/loungecat']
+        run(['desktop-file-validate','/usr/share/applications/io.github.binkiewka.LoungeCat.desktop'])
+        assert Path('/usr/share/icons/hicolor/256x256/apps/loungecat.png').exists()
+        assert Path('/usr/share/doc/loungecat/LICENSE').exists()
+        dependencies=run(['rpm','-q','--requires','loungecat']).stdout
+        assert 'openssl-libs' in dependencies and 'ca-certificates' in dependencies
+        (output/'rpm-requires.txt').write_text(dependencies)
+    elif args.format=='gentoo':
+        package=next(dist.glob('*.ebuild'))
+        command=['/usr/bin/loungecat']
+        run(['desktop-file-validate','/usr/share/applications/io.github.binkiewka.LoungeCat.desktop'])
+        assert Path('/usr/share/icons/hicolor/256x256/apps/loungecat.png').exists()
+        assert Path('/usr/share/doc/loungecat/LICENSE').exists()
     else:
         package=next(dist.glob('*.AppImage'))
         package.chmod(0o755)
@@ -170,8 +187,11 @@ with tempfile.TemporaryDirectory(prefix='loungecat-package-') as tmp:
     finally:
         if app is not None and app.poll() is None:app.terminate();app.wait(timeout=10)
         xvfb.terminate();xvfb.wait(timeout=10);xlog.close()
-    if args.format=='deb':
-        run(['dpkg','--remove','loungecat'])
+    if args.format in ('deb','rpm','gentoo'):
+        remove={'deb':['dpkg','--remove','loungecat'],
+                'rpm':['dnf','remove','-y','loungecat'],
+                'gentoo':['emerge','--unmerge','net-irc/loungecat']}[args.format]
+        run(remove)
         assert not Path('/usr/bin/loungecat').exists(),'Package uninstall left the executable'
         assert (root/'profile/loungecat.db').exists(),'Uninstall removed user data'
     (output/'summary.json').write_text(json.dumps({'format':args.format,'version':manifest['version'],
@@ -179,6 +199,6 @@ with tempfile.TemporaryDirectory(prefix='loungecat-package-') as tmp:
         'checks':['artifact checksums','CLI version/help without profile writes','desktop integration metadata',
             'SQLite plugin round trip','verified loopback TLS and OpenSSL','SVG rendering','widget rendering',
             'visible packaged xcb main window','Settings open/close','normal process exit',
-            'durable owner-only profile database']+(['install dependency resolution','uninstall preserves user data'] if args.format=='deb' else ['bundled Qt/TLS/SQL library mappings; no system Qt']),
+            'durable owner-only profile database']+(['install dependency resolution','uninstall preserves user data'] if args.format!='appimage' else ['bundled Qt/TLS/SQL library mappings; no system Qt']),
         'passed':True},indent=2)+'\n')
     print(args.format+': packaged runtime, GUI/Settings and persistence checks passed')

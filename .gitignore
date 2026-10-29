@@ -23,3 +23,8 @@
 *.db-shm
 *.db-wal
 __pycache__/
+
+/dist-rpm/
+/dist-gentoo/
+/dist-release/
+/release-inputs/

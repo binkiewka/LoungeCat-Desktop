@@ -1,0 +1,7 @@
+FROM fedora:44@sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80
+# No Qt is preinstalled: dnf must resolve the RPM's declared dependencies.
+RUN dnf install -y --setopt=install_weak_deps=False \
+    python3 openssl xorg-x11-server-Xvfb xdotool libX11 desktop-file-utils \
+    dejavu-sans-fonts mesa-libGL mesa-libEGL \
+    && dnf clean all
+WORKDIR /work

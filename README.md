@@ -38,7 +38,9 @@ path. Leave `LOUNGECAT_DB_PATH` and `LOUNGECAT_CONFIG` unset. See [BUILD.md](BUI
 for Debian/Ubuntu dependencies, test commands and runtime requirements, and read the
 [migration/rollback notes](docs/MIGRATION-v2.md) before reusing existing data.
 
-**Package baseline:** Debian 12 / glibc 2.36, x86_64. CI installs/runs both formats in clean Debian 12 and Ubuntu 24.04 containers, including a virtual X11 window, Settings, SQLite, verified TLS and shutdown checks. This is not certification of every distro/compositor. Flatpak, `.rpm`, Windows and ARM64 are not built yet. See [package/download instructions](docs/PACKAGING.md).
+**Additional packages:** Fedora 44 x86_64 RPM and a Gentoo amd64 ebuild/overlay are built and tested by their own required CI jobs. The combined `loungecat-release-linux-x86_64` artifact contains all formats and verified checksums.
+
+**Package baseline:** Debian 12 / glibc 2.36, x86_64. CI installs/runs both formats in clean Debian 12 and Ubuntu 24.04 containers, including a virtual X11 window, Settings, SQLite, verified TLS and shutdown checks. This is not certification of every distro/compositor. The RPM targets Fedora 44, not every RPM distro; Gentoo uses system Qt and compiles from source. Flatpak, Windows and ARM64 are not built yet. See [package/download instructions](docs/PACKAGING.md).
 
 ## Screenshots
 

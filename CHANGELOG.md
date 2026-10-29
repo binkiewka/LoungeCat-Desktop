@@ -1,10 +1,14 @@
 # Changelog
 
-## Unreleased
+## 2.0.1 — branding and additional Linux packages
 
 - Restore the original Kotlin desktop cat artwork in the native window, sidebar,
   desktop/package icon and subtle chat watermark.
 - Refresh the README gallery to show the restored branding.
+- Add native Fedora 44 x86_64 RPM builds and clean installation/runtime tests.
+- Add a Gentoo amd64 EAPI 8 ebuild/overlay, tested by Portage against the exact source.
+- Gate automatic release uploads on every package target and verify the Gentoo source Manifest.
+- Make the optional ALSA backend selectable as AUTO, ON or OFF for reproducible USE flags.
 
 ## 2.0.0 — native successor
 
