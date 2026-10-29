@@ -10,6 +10,7 @@ version=$(python3 -c 'import json; print(json.load(open("/packages/package-manif
 mkdir -p /var/db/repos/loungecat /var/cache/distfiles /etc/portage/repos.conf \
     /etc/portage/package.accept_keywords /etc/portage/package.use /results /packages/test-support
 cp -a /packages/overlay/. /var/db/repos/loungecat/
+printf '[DEFAULT]\nmain-repo = gentoo\n[gentoo]\nlocation = /var/db/repos/gentoo\nauto-sync = no\n' > /etc/portage/repos.conf/gentoo.conf
 printf '[loungecat]\nlocation = /var/db/repos/loungecat\nauto-sync = no\n' > /etc/portage/repos.conf/loungecat.conf
 printf 'net-irc/loungecat ~amd64\n' > /etc/portage/package.accept_keywords/loungecat
 printf 'net-irc/loungecat alsa test\n' > /etc/portage/package.use/loungecat
