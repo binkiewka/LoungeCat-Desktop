@@ -2,6 +2,7 @@
 """Installed-package GUI, plugin and verified-TLS smoke in a disposable container."""
 from pathlib import Path
 import argparse
+import bz2
 import ctypes
 import hashlib
 import json
@@ -101,7 +102,10 @@ with tempfile.TemporaryDirectory(prefix='loungecat-package-') as tmp:
         command=['/usr/bin/loungecat']
         run(['desktop-file-validate','/usr/share/applications/io.github.binkiewka.LoungeCat.desktop'])
         assert Path('/usr/share/icons/hicolor/256x256/apps/loungecat.png').exists()
-        assert Path('/usr/share/doc/loungecat/LICENSE').exists()
+        # Portage's standard docompress phase compresses installed documentation.
+        license_path=Path('/usr/share/doc/loungecat/LICENSE')
+        license_bytes=license_path.read_bytes() if license_path.exists() else bz2.decompress(Path(str(license_path)+'.bz2').read_bytes())
+        assert b'GNU GENERAL PUBLIC LICENSE' in license_bytes
     else:
         package=next(dist.glob('*.AppImage'))
         package.chmod(0o755)

@@ -3,7 +3,7 @@
 
 EAPI=8
 
-inherit cmake
+inherit cmake xdg
 
 DESCRIPTION="Native Qt multi-network IRC client"
 HOMEPAGE="https://github.com/binkiewka/LoungeCat-Desktop"
