@@ -97,8 +97,8 @@ No profile-dependent Gentoo binary package is advertised as a universal installe
   retaining user data. Dependencies are recorded with `rpm --requires`.
 - Gentoo: pkgcheck, real Portage source compilation with ALSA/tests enabled, native
   regression fixtures, installed GUI/Settings/SQLite/verified TLS and unmerge preserving
-  profile data. Dependencies come from Gentoo's signature-verified binhost; the app
-  itself is built from source. Both the source Manifest and standalone recipe/overlay
+  profile data. Dependencies prefer Gentoo's signature-verified binhost; unavailable test-tool/USE
+  variants are built from verified distfiles. The app itself is built from source. Both the source Manifest and standalone recipe/overlay
   consistency are rechecked before publication.
 - Existing native normal/ASan regression jobs remain required for tag publication.
 

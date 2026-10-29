@@ -57,6 +57,7 @@ c++ -std=c++20 -fPIC packaging/runtime-probe.cpp -o "$dist/test-support/runtime-
     $(pkg-config --cflags --libs Qt6Widgets Qt6Sql Qt6Network Qt6Svg)
 cp packaging/smoke.py "$dist/test-support/"
 cp tests/fixtures/localhost-{cert,key}.pem "$dist/test-support/"
+python3 packaging/check-source.py
 git archive --format=tar.gz --prefix="LoungeCat-${version}-source/" \
     --output="$dist/LoungeCat-${version}-source.tar.gz" HEAD
 git rev-parse HEAD > "$dist/SOURCE_COMMIT"

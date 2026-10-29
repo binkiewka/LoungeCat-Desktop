@@ -9,6 +9,7 @@
 - Add a Gentoo amd64 EAPI 8 ebuild/overlay, tested by Portage against the exact source.
 - Gate automatic release uploads on every package target and verify the Gentoo source Manifest.
 - Make the optional ALSA backend selectable as AUTO, ON or OFF for reproducible USE flags.
+- Fix text-log worker lookup for newer Qt meta-object checks without changing queued log handling.
 
 ## 2.0.0 — native successor
 

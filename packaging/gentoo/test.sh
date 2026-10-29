@@ -28,6 +28,6 @@ c++ -std=c++20 -fPIC /src/packaging/runtime-probe.cpp -o /packages/test-support/
 cp /src/packaging/smoke.py /src/tests/fixtures/localhost-{cert,key}.pem /packages/test-support/
 python3 - <<'INVENTORY'
 from pathlib import Path
-p=Path('/var/db/pkg'); Path('/packages/gentoo-build-dependencies.tsv').write_text(''.join(str(x.relative_to(p))+'\n' for x in sorted(p.glob('*/*')) if x.is_dir()))
+p=Path('/var/db/pkg'); Path('/packages/gentoo-build-dependencies.tsv').write_text(''.join(str(x.parent.name)+'\t'+str(x.name)+'\n' for x in sorted(p.glob('*/*')) if x.is_dir()))
 INVENTORY
 python3 /packages/test-support/smoke.py --format gentoo --dist /packages --output /results

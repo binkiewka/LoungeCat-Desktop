@@ -16,4 +16,5 @@ c++ -std=c++20 -fPIC packaging/runtime-probe.cpp -o "$dist/test-support/runtime-
     $(pkg-config --cflags --libs Qt6Widgets Qt6Sql Qt6Network Qt6Svg)
 cp packaging/smoke.py tests/fixtures/localhost-{cert,key}.pem "$dist/test-support/"
 rpm -qa --qf '%{NAME}\t%{VERSION}-%{RELEASE}\n' | sort > "$dist/rpm-build-dependencies.tsv"
+python3 packaging/check-source.py
 python3 packaging/write-manifest.py --kind rpm --dist "$dist"
